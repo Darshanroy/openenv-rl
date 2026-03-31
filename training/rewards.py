@@ -42,16 +42,17 @@ def reward_repetition(completions, **kwargs) -> List[float]:
     return rewards
 
 def reward_step_efficiency(completions, **kwargs) -> List[float]:
-    """Penalize excessive meandering logic steps."""
+    """Smooth decay penalizing excessive meandering logic steps."""
     rewards = []
     step_counts = kwargs.get("step_count", [0]*len(completions))
 
     for steps in step_counts:
-        rewards.append(-0.1 * steps)
+        # Reduced from -0.1 to -0.05 so agent doesn't become too conservative
+        rewards.append(-0.05 * steps)
     return rewards
 
 def reward_invalid_action(completions, **kwargs) -> List[float]:
-    """Penalize hallucinated tools not in the environment registry."""
+    """Penalize hallucinated tools not in the environment registry and empty actions."""
     rewards = []
     valid_actions_list = kwargs.get("valid_actions", [])
     
@@ -67,10 +68,50 @@ def reward_invalid_action(completions, **kwargs) -> List[float]:
         action = extract_action(c)
         valid_actions = valid_actions_list[i] if i < len(valid_actions_list) else all_valid_tools
 
-        if action and action not in valid_actions:
-            rewards.append(-1.0)
+        if not action:
+            rewards.append(-0.3)  # penalize empty
+        elif action not in valid_actions:
+            rewards.append(-1.0)  # hallucinated tool
         else:
-            rewards.append(0.2)
+            rewards.append(0.3)   # valid dictionary tool
+    return rewards
+
+def reward_action_alignment(completions, **kwargs) -> List[float]:
+    """State-aware correctness: Reward for picking a tool appropriate for the current intent/task."""
+    rewards = []
+    # Try looking for task_id or intent inside kwargs
+    intents = kwargs.get("task_id", kwargs.get("intent", []))
+    
+    intent_to_tools = {
+        "easy_status": ["get_order", "track_shipment", "respond"],
+        "easy_payment_fail": ["get_order", "respond"],
+        "easy_coupon": ["validate_coupon", "respond"],
+        "easy_account": ["reset_password", "respond"],
+        "easy_cancel": ["get_order", "cancel_order", "respond"],
+        "medium_delay": ["get_order", "track_shipment", "respond"],
+        "medium_address": ["get_order", "update_address", "respond"],
+        "medium_reschedule": ["get_order", "check_delivery_slot", "reschedule_delivery", "respond"],
+        "medium_return": ["get_order", "validate_return", "create_return_request", "respond"],
+        "medium_double_charge": ["get_order", "initiate_refund", "respond"],
+        "hard_refund": ["get_order", "validate_return", "initiate_refund", "respond"],
+        "hard_damaged": ["get_order", "ask_proof", "validate_return", "initiate_refund", "respond"],
+        "hard_missing": ["get_order", "track_shipment", "investigate_missing", "escalate_to_human", "respond"],
+        "hard_angry": ["get_order", "track_shipment", "respond"],
+        "hard_escalation": ["get_order", "escalate_to_human", "respond"]
+    }
+
+    for i, c in enumerate(completions):
+        action = extract_action(c)
+        intent = intents[i] if i < len(intents) else None
+
+        if intent and action:
+            if action in intent_to_tools.get(intent, []):
+                rewards.append(1.0)
+            else:
+                rewards.append(-0.5)
+        else:
+            rewards.append(0.0)
+
     return rewards
 
 def reward_task_success(completions, **kwargs) -> List[float]:
@@ -93,14 +134,17 @@ def reward_completion(completions, **kwargs) -> List[float]:
             rewards.append(0.0)
         elif h[-1] == "respond":
             rewards.append(1.0)
+        elif "respond" in h:
+            rewards.append(0.3)  # partial credit
         else:
-            rewards.append(-0.3)
+            rewards.append(-0.3) # slight penalty
     return rewards
 
 def total_reward(completions, **kwargs):
     """
     Combined Reward function strictly scaled for PPO safety.
     Prioritizes Ground Truth Success > Efficiency > Format compliance
+    Fully clipts standard reward boundary [-5.0, 5.0] to prevent explosion variance.
     """
     r = []
 
@@ -112,6 +156,7 @@ def total_reward(completions, **kwargs):
     r6 = reward_step_efficiency(completions, **kwargs)
     r7 = reward_invalid_action(completions, **kwargs)
     r8 = reward_completion(completions, **kwargs)
+    r9 = reward_action_alignment(completions, **kwargs) # State-aware correctness
 
     for i in range(len(completions)):
         total = (
@@ -120,10 +165,15 @@ def total_reward(completions, **kwargs):
             r3[i] * 0.5 +
             r4[i] * 0.5 +
             r5[i] * 0.7 +
-            r6[i] * 1.0 +
+            r6[i] * 0.8 +
             r7[i] * 1.5 +
-            r8[i] * 1.0
+            r8[i] * 1.0 +
+            r9[i] * 1.2     # Action alignment weight
         )
+        
+        # PPO-safe clipping to prevent reward scale drift
+        total = max(-5.0, min(5.0, total))
+        
         r.append(total)
 
     return r
