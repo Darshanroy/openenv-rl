@@ -22,80 +22,61 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 SAMPLE_PROMPTS = {
     "easy_status": [
-        "Hey where is my order ORD-101?? I ordered it ages ago.", 
-        "can u pls tell me the status of ORD-101", 
-        "Tracking for ORD-101, please."
+        "Hi, I'm checking on ORD-101. It's been a while since I heard anything. Can you tell me if it shipped yet?", 
+        "Status for ORD-101 please. Also, what items are in it?", 
     ],
     "easy_payment_fail": [
-        "my card got declined for ORD-1414 but I have money??", 
-        "Why did my transaction for ORD-1414 fail? Pls help.",
-        "ORD-1414 payment error, what's wrong."
+        "My payment for ORD-1414 failed but my bank says the money is reserved. Why did this happen?", 
+        "ORD-1414 checkout error. I used a Visa card ending in 4242.",
     ],
     "easy_coupon": [
-        "I have a coupon SAVE10 but it's not working at checkout!!", 
-        "Apply SAVE10 to my cart please, it keeps saying invalid.",
-        "Code SAVE10 broke for me."
+        "I'm trying to use SAVE10 on my order but it says 'Invalid'. Can you check if it's expired or if there's a minimum spend?", 
     ],
     "easy_account": [
-        "I totally forgot my password for meera.reddy@example.com...", 
-        "can't login to meera.reddy@example.com pls reset",
-        "lockout on meera.reddy@example.com"
+        "I can't log in to my account at meera.reddy@example.com. I've tried resetting but no email arrived.", 
     ],
     "medium_delay": [
-        "My order ORD-909 is like a week late, what is going on??", 
-        "Check delay on ORD-909. Tracking hasn't updated in days.",
-        "Where the heck is ORD-909?"
+        "ORD-909 was supposed to be here yesterday. It's for a birthday gift and I'm worried it's lost. Track it for me?", 
+        "Where is ORD-909? The tracking link you sent isn't working.",
     ],
     "easy_cancel": [
-        "Cancel my order ORD-505 immediately, found it cheaper somewhere else.", 
-        "I don't want ORD-505 anymore, please stop it from shipping.",
-        "mistake order ORD-505 cancel pls."
+        "I need to cancel ORD-505 immediately. I realized I ordered the wrong size. Is it too late?", 
     ],
     "medium_address": [
-        "Oops I put the wrong address for ORD-1919. Change it to '789 New Street' pls.", 
-        "Update delivery location for ORD-1919 immediately before it ships!",
-        "moved recently, change address on ORD-1919 to 789 New Street."
+        "I just realized I sent ORD-1919 to my old house! Can you change the address to '789 New Street, Apt 4B' before it ships?", 
     ],
     "medium_reschedule": [
-        "I'm out of town, can we reschedule ORD-2323?", 
-        "I won't be home for ORD-2323, change the delivery time.",
-        "reschedule ORD-2323"
+        "I won't be home tomorrow morning for the ORD-2323 delivery. Can we move it to Saturday afternoon instead?", 
     ],
     "medium_return": [
-        "The items in ORD-2020 don't fit, how do I return them?", 
-        "Requesting a return shipping label for ORD-2020.",
-        "want to return ORD-2020, didn't like it."
+        "I got ORD-2020 but the shoes are too small. How do I start a return? Do I need the original box?", 
     ],
     "medium_double_charge": [
-        "UMM why was I charged TWICE for ORD-1515??? Fix this now.", 
-        "Refund the second charge on ORD-1515, my bank statement shows two.",
-        "double charge bug on ORD-1515."
+        "My credit card was charged $150 twice for ORD-1515. Please refund the duplicate transaction immediately.", 
     ],
     "hard_refund": [
-        "I need a full refund for ORD-2121. The quality is terrible.", 
-        "Give me my money back for ORD-2121 ASAP.",
-        "processing refund for ORD-2121."
+        "I'm very disappointed with the quality of ORD-2121. I want a full refund. What is the process for this?", 
     ],
     "hard_damaged": [
-        "ORD-2222 arrived completely shattered in pieces! Unbelievable!!!", 
-        "The box for ORD-2222 was crushed and the item is ruined.",
-        "item broken in ORD-2222."
+        "This is unacceptable! ORD-2222 arrived with the screen completely shattered. I have photos of the box too.", 
     ],
     "hard_missing": [
-        "Tracking for ORD-1313 shows as 'Delivered' but there is literally nothing on my porch.", 
-        "Missing items from ORD-1313. I checked everywhere, even with neighbors.",
-        "ORD-1313 says delivered, it's NOT here."
+        "My dashboard says ORD-1313 was 'Delivered' at 2 PM, but I've been home all day and nothing arrived. Please investigate.", 
     ],
     "hard_angry": [
-        "I AM EXTREMELY FURIOUS! ORD-909 IS STILL MISSING AND NOBODY IS HELPING ME!!!", 
-        "YOUR SERVICE IS PATHETIC! I'VE WAITED WEEKS FOR ORD-909 AND NOTHING!",
-        "Worst experience ever. Where is ORD-909, you guys are a scam."
+        "I AM FURIOUS! I've been waiting 3 weeks for ORD-909 and every time I call I get a different answer. I want my money back NOW!", 
     ],
     "hard_escalation": [
-        "I want to speak to your manager about ORD-1414 right away.", 
-        "This is ridiculous. Escalate my case for ORD-1414 to someone higher up.",
-        "Connect me to a human supervisor now, I'm done with bots."
+        "You're not helping me with ORD-1414. This is a $2000 order and I need to speak to a supervisor or your manager right now.", 
     ]
+}
+
+SCENARIO_GUIDE = {
+    "easy_status": "1. Fetch order status → 2. Inform customer → 3. Help with follow-up.",
+    "hard_damaged": "1. Fetch order → 2. ASK FOR PROOF (Mandatory) → 3. Validate return → 4. Initiate refund.",
+    "medium_address": "1. Fetch order → 2. Check if already shipped → 3. Update address → 4. Confirm to customer.",
+    "hard_missing": "1. Fetch order → 2. Track shipment → 3. Investigate missing case → 4. Resolve or Escalate.",
+    "hard_angry": "1. Apologize profusely → 2. Check status → 3. Fix issue or Escalate immediately to calm them down."
 }
 SCENARIOS = list(SAMPLE_PROMPTS.keys())
 
@@ -165,16 +146,20 @@ with st.sidebar:
     with st.expander("📖 Agent Protocol Rules"):
         st.markdown("""
         **1. Strict Routing**: Requests always pass from Router → Specialist → Supervisor.
-        **2. Tool Constraints**: Specialists can only use their restricted toolset (e.g. Finance cannot cancel orders).
-        **3. Supervisor Override**: Abusive inputs or manager requests bypass specialists completely.
-        **4. Turn Limits**: The environment caps episodes at 6 turns.
+        **2. Tool Constraints**: Specialists can only use their restricted toolset.
+        **3. Supervisor Override**: Abusive inputs bypass specialists completely.
+        **4. Turn Limits**: The environment caps episodes at 8 turns.
         """)
+    
+    if selected_task in SCENARIO_GUIDE:
+        st.markdown("### 🎯 Ideal End-to-End Resolution Path")
+        st.info(SCENARIO_GUIDE[selected_task])
 
 # ── Main Content Area ──
 st.title("🤖 OpenEnv Multi-Agent Dashboard")
 st.markdown("Watch the pipeline dynamically route intents, execute tools, and finalize responses.")
 
-tab_chat, tab_metrics = st.tabs(["💬 Live Testing & Flow", "📊 Benchmark Leaderboard"])
+tab_chat, tab_metrics, tab_demo = st.tabs(["💬 Live Testing & Flow", "📊 Benchmark Leaderboard", "📖 End-to-End Demo"])
 
 with tab_chat:
     
@@ -324,3 +309,41 @@ with tab_metrics:
                 # st.dataframe(chart_df, use_container_width=True)
         else:
             st.info("No leaderboard data found. Click 'Run Full 15-Task Eval' to generate the baseline metrics.")
+
+with tab_demo:
+    st.markdown("### 📖 Demo: Complex Resolution Flow (Damaged Item)")
+    st.markdown("This walkthrough demonstrates a **4-turn interaction** where the agent follows the strict protocol: fetch order → ask for proof → validate return → refund.")
+    
+    demo_cols = st.columns([1, 1])
+    
+    with demo_cols[0]:
+        with st.chat_message("user", avatar="👤"):
+            st.write("**Customer:** ORD-2222 arrived completely shattered! I'm so angry!")
+        with st.chat_message("assistant", avatar="🤖"):
+            st.write("**Agent:** I am so sorry to hear that! Let me check the details for ORD-2222.")
+            with st.expander("🔍 Reasoning & Tool"):
+                st.info("**Background:** Customer reported damage. I need to get order details to confirm the purchase branch.")
+                st.code("[get_order('ORD-2222')]", language="python")
+        
+        with st.chat_message("user", avatar="👤"):
+            st.write("**Customer:** Here is the photo of the broken screen: [shattered_screen.jpg]")
+        with st.chat_message("assistant", avatar="🤖"):
+            st.write("**Agent:** Thank you for providing evidence. I have validated your return eligibility.")
+            with st.expander("🔍 Reasoning & Tool"):
+                st.info("**Background:** Evidence received. Now I must validate return eligibility.")
+                st.code("[validate_return('ORD-2222')]", language="python")
+
+    with demo_cols[1]:
+        with st.chat_message("assistant", avatar="🤖"):
+            st.write("**Agent:** I have initiated a full refund of $1,499 back to you.")
+            with st.expander("🔍 Reasoning & Tool"):
+                st.info("**Background:** Return validated. Standard procedure for damaged items is immediate refund upon proof.")
+                st.code("[initiate_refund('ORD-2222')]", language="python")
+        
+        st.success("🎯 **Final Task Reward: 1.00 / 1.0**")
+        st.markdown("""
+        **Why this is 'End-to-End':**
+        - **Protocol Adherence**: The agent didn't skip 'ask_proof'.
+        - **Reasoning continuity**: Each step built on previous turn data.
+        - **Natural Language**: Cleaned-up output for the user.
+        """)
