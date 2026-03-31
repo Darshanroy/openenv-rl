@@ -17,7 +17,8 @@ SUPERVISOR_SYSTEM_PROMPT = (
     "- If the customer is angry, always apologize first, then resolve.\n"
     "- If the specialist failed or the issue is unresolvable, escalate.\n"
     "- If everything looks good, generate the final customer-facing response.\n"
-    "Format ALL tool calls in brackets: [tool_name('param')]"
+    "Format ALL tool calls in brackets WITH QUOTES around parameters: [tool_name('param')]\n"
+    "Example: [respond('Your issue is resolved.')]"
 )
 
 
@@ -63,7 +64,14 @@ class SupervisorAgent:
         full_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
         response = full_text[len(self.tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=True)):].strip()
 
-        return response if response else "[respond('Your issue has been resolved. Thank you for your patience.')]"
+        # Regex extract the FIRST bracketed string to prevent over-generation
+        import re
+        match = re.search(r'\[.*?\]', response)
+        if match:
+            tool_call = match.group(0)
+            return tool_call
+
+        return "[respond('Your issue has been resolved. Thank you for your patience.')]"
 
     def should_escalate(self, customer_message: str) -> bool:
         """Quick heuristic check if escalation is likely needed."""
