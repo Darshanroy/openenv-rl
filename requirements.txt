@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+torch
+transformers
+git+https://github.com/huggingface/trl.git
+datasets
+accelerate
+huggingface_hub
+gradio
+python-multipart

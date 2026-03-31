@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+training_outputs/
+*.log
+.env
+.DS_Store

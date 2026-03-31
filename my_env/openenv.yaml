@@ -1,0 +1,35 @@
+name: "CustomerSupport-v1"
+author: "OpenEnv Developer"
+description: "Realistic multi-turn support environment with 3 task tiers (Easy, Medium, Hard)."
+version: 1.1.0
+entry_point: "my_env.server.my_environment:SupportEnvironment"
+tasks:
+  - id: "easy_status"
+    name: "Standard Order Status Query"
+    difficulty: "easy"
+    description: "Fetch order and shipment status."
+  - id: "medium_return"
+    name: "Valid Return & Refund Request"
+    difficulty: "medium"
+    description: "Validate a return window and initiate a refund for a damaged item."
+  - id: "hard_fraud"
+    name: "Fraudulent Charge Escalation"
+    difficulty: "hard"
+    description: "Identify unauthorized charge, cancel order, and escalate to human supervisor."
+  - id: "easy_payment"
+    name: "Standard Payment Status Check"
+    difficulty: "easy"
+    description: "Check if a transaction ID was successfully processed."
+  - id: "medium_delay"
+    name: "Shipment Delay Investigation"
+    difficulty: "medium"
+    description: "Investigate a delayed delivery and track the item."
+  - id: "hard_cancel_shipped"
+    name: "Complex Cancellation (Already Shipped)"
+    difficulty: "hard"
+    description: "Handle a request to cancel an order that is already in transit."
+reward_config:
+  step_penalty: -0.1
+  partial_progress: 0.3
+  syntax_error: -1.0
+  success_max: 1.0

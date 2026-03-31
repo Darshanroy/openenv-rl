@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my_env"
+version = "0.1.0"
+description = "Custom Customer Support Environment for Meta OpenEnv"
+authors = [{name = "Developer"}]
+dependencies = [
+    "requests",
+    "pydantic"
+]
