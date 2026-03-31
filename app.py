@@ -18,7 +18,7 @@ from training.config import METRICS_FILE, ENV_SERVER_URL
 MODEL_NAME = "Qwen/Qwen2.5-1.5B"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Scenario to Conversational Sample Mapping
+# Scenario Mapping
 SAMPLE_PROMPTS = {
     "easy_status": ["Where is my order ORD-101?", "When will ORD-101 arrive?", "Status of my latest order?"],
     "easy_payment_fail": ["My payment for ORD-1414 failed.", "Why did my transaction for ORD-1414 not go through?", "Help with payment failure."],
@@ -39,21 +39,57 @@ SAMPLE_PROMPTS = {
 
 SCENARIOS = list(SAMPLE_PROMPTS.keys())
 
-# Load Model and Tokenizer
-print(f"Loading model {MODEL_NAME}...")
+# Tool Catalog Data
+TOOL_CATALOG = """
+### 🛠️ Agent Tool Catalog
+The agent uses these APIs to interact with the database:
+
+**Order Management**
+- `get_order(order_id)`: Fetches details like items, price, and status.
+- `cancel_order(order_id)`: Cancels pending orders.
+
+**Logistics & Delivery**
+- `track_shipment(order_id)`: Live tracking data.
+- `update_address(order_id, addr)`: Changes destination.
+- `reschedule_delivery(order_id, slot)`: Changes delivery time.
+
+**Returns & Refunds**
+- `validate_return(order_id)`: Eligibility check.
+- `ask_proof(order_id)`: Requests damage photo links.
+- `initiate_refund(order_id)`: Reverses payment.
+
+**Support**
+- `validate_coupon(code)`: Applies discounts.
+- `reset_password(email)`: Account recovery.
+- `escalate_to_human(issue)`: Human handover.
+"""
+
+# Theme Setup
+theme = gr.themes.Soft(
+    primary_hue="blue",
+    secondary_hue="indigo",
+    font=[gr.fonts.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
+).set(
+    body_background_fill="*neutral_50",
+    block_background_fill="*neutral_100",
+    block_border_width="1px",
+    button_primary_background_fill="*primary_500",
+    button_primary_text_color="white",
+)
+
+# Load Model/Client
+print(f"Loading {MODEL_NAME}...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME, 
     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
     device_map="auto"
 )
-
 client = SupportEnvClient(base_url=ENV_SERVER_URL)
 
-def wait_for_server(url, timeout=5):
+def wait_for_server(url):
     try:
-        response = requests.get(f"{url}/health")
-        return response.status_code == 200
+        return requests.get(f"{url}/health").status_code == 200
     except:
         return False
 
@@ -63,8 +99,8 @@ def get_leaderboard_data():
         chart_df = df[df["Scenario"] != "GLOBAL_AVERAGE"]
         avg_row = df[df["Scenario"] == "GLOBAL_AVERAGE"]
         avg_score = avg_row["Score"].values[0] if not avg_row.empty else 0.0
-        return chart_df, f"Current Accuracy: {avg_score*100:.1f}%"
-    return pd.DataFrame(columns=["Scenario", "Score"]), "No benchmark data found. Run a benchmark to start tracking."
+        return chart_df, f"Current Master Table Accuracy: {avg_score*100:.1f}%"
+    return pd.DataFrame(columns=["Scenario", "Score"]), "No benchmark data found. Run a full benchmark to start tracking."
 
 def trigger_benchmark():
     run_benchmark(save_to_csv=True)
@@ -74,13 +110,11 @@ def update_samples(task_id):
     samples = SAMPLE_PROMPTS.get(task_id, ["Hello"])
     return gr.update(choices=samples, value=samples[0])
 
-def predict(message, history, task_id):
+def chat_step(message, history, task_id):
     if not wait_for_server(ENV_SERVER_URL):
-        return history + [[message, "Error: Environment server is not responding. Please check logs."]]
+        return history + [[message, "Error: Environment server is not responding. Please check logs."]], ""
 
-    # If it's the start, reset the environment
-    is_reset = len(history) == 0
-    if is_reset:
+    if len(history) == 0:
         res = client.reset(task_id=task_id)
         obs = res.observation
     else:
@@ -91,71 +125,95 @@ def predict(message, history, task_id):
     inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
     outputs = model.generate(**inputs, max_new_tokens=100)
     response = tokenizer.decode(outputs[0], skip_special_tokens=True).split("Assistant:")[-1].strip()
-    
-    return history + [[message, response]]
+    return history + [[message, response]], ""
 
-# UI Layout
-with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# 🤖 OpenEnv CSA: Customer Support Agent")
+# --- UI APP ---
+with gr.Blocks(theme=theme, title="OpenEnv CSA Dashboard") as demo:
+    gr.Markdown("# 🤖 OpenEnv CSA Dashboard")
+    gr.Markdown("Interact with our RL-trained Customer Support Agent and track performance stats.")
     
-    with gr.Tabs():
-        with gr.Tab("💬 Agent Chat"):
-            with gr.Row():
-                with gr.Column(scale=1):
-                    task_selector = gr.Dropdown(choices=SCENARIOS, label="1. Select Scenario", value="easy_status")
-                    reset_btn = gr.Button("Reset Environment")
+    with gr.Row():
+        # --- LEFT SIDEBAR ---
+        with gr.Column(scale=1):
+            with gr.Group():
+                gr.Markdown("### ⚙️ Controls")
+                task_selector = gr.Dropdown(choices=SCENARIOS, label="1. Active Scenario", value="easy_status")
+                reset_btn = gr.Button("♻️ Reset Environment", variant="secondary")
                 
-                with gr.Column(scale=2):
-                    sample_selector = gr.Dropdown(choices=SAMPLE_PROMPTS["easy_status"], label="2. View Real Conversational Samples", value=SAMPLE_PROMPTS["easy_status"][0])
-                    use_sample_btn = gr.Button("Apply Sample to Chat", variant="secondary")
+                gr.Markdown("---")
+                sample_selector = gr.Dropdown(
+                    choices=SAMPLE_PROMPTS["easy_status"], 
+                    label="2. Conversational Samples", 
+                    value=SAMPLE_PROMPTS["easy_status"][0]
+                )
+                use_sample_btn = gr.Button("✨ Apply Sample to Chat", variant="secondary")
 
-            chatbot = gr.Chatbot(label="Customer Conversation")
-            msg_input = gr.Textbox(placeholder="Ask the agent something...", label="User Message")
-            
-            with gr.Row():
-                submit_btn = gr.Button("Send", variant="primary")
-                clear_btn = gr.Button("Clear")
+            with gr.Accordion("📜 Rules of the Agent", open=False):
+                gr.Markdown("""
+                **Rule 1: Tool Call Format**
+                The agent communicates with the database using brackets: `[tool_name('parameter')]`.
+                
+                **Rule 2: Turn Limit**
+                Every interaction has a **6-turn limit**. If the agent hasn't resolved the issue by then, it's marked as failed.
+                
+                **Rule 3: Handover**
+                For critical issues (Angry/Security), the agent is trained to use `escalate_to_human`.
+                """)
 
-            def chat_step(message, history, task_id):
-                return predict(message, history, task_id), ""
+            with gr.Accordion("🛠️ Tool Catalog", open=False):
+                gr.Markdown(TOOL_CATALOG)
 
-            # Connect Components
-            task_selector.change(update_samples, inputs=[task_selector], outputs=[sample_selector])
-            use_sample_btn.click(lambda s: s, inputs=[sample_selector], outputs=[msg_input])
-            submit_btn.click(chat_step, inputs=[msg_input, chatbot, task_selector], outputs=[chatbot, msg_input])
-            msg_input.submit(chat_step, inputs=[msg_input, chatbot, task_selector], outputs=[chatbot, msg_input])
-            reset_btn.click(lambda: None, None, [chatbot]) # Just clear visual UI for now, logic handles it.
+        # --- MAIN PANEL ---
+        with gr.Column(scale=3):
+            with gr.Tabs():
+                with gr.Tab("💬 Agent Conversation"):
+                    chatbot = gr.Chatbot(label="Simulated Chat Session", height=450, bubble_full_width=False)
+                    with gr.Row():
+                        msg_input = gr.Textbox(
+                            placeholder="Type your message here...", 
+                            label="Your Input", 
+                            scale=4
+                        )
+                        submit_btn = gr.Button("Send", variant="primary", scale=1)
+                    
+                    gr.ClearButton([chatbot, msg_input], value="🗑️ Clear Chat")
 
-        with gr.Tab("📊 Performance Leaderboard"):
-            gr.Markdown("### Agent Master Table Performance")
-            accuracy_text = gr.Markdown("Loading metrics...")
-            
-            with gr.Row():
-                refresh_btn = gr.Button("🔄 Refresh Stats")
-                run_btn = gr.Button("🚀 Run Full Benchmark", variant="primary")
-            
-            plot = gr.BarPlot(
-                value=None,
-                x="Scenario",
-                y="Score",
-                title="Scenario Accuracy (0.0 - 1.0)",
-                vertical=False,
-                y_lim=[0, 1],
-                width=800,
-                height=400
-            )
+                with gr.Tab("📊 Performance Metrics"):
+                    accuracy_text = gr.Markdown("Loading Master Table stats...")
+                    with gr.Row():
+                        refresh_btn = gr.Button("🔄 Refresh Stats")
+                        run_btn = gr.Button("🚀 Run Full Benchmark", variant="primary")
+                    
+                    plot = gr.BarPlot(
+                        value=None, x="Scenario", y="Score",
+                        title="Scenario Success Rate (0.0 - 1.0)",
+                        vertical=False, y_lim=[0, 1],
+                        width=None, height=400, color="Scenario",
+                        tooltip=["Scenario", "Score"]
+                    )
+                    
+                    gr.Markdown("### 📋 Latest Detailed Report")
+                    leaderboard_table = gr.DataFrame()
 
-            leaderboard_table = gr.DataFrame(label="Latest Benchmarking Results")
+    # --- EVENTS ---
+    task_selector.change(update_samples, inputs=[task_selector], outputs=[sample_selector])
+    use_sample_btn.click(lambda s: s, inputs=[sample_selector], outputs=[msg_input])
+    
+    # Combined Chat Events
+    submit_btn.click(chat_step, [msg_input, chatbot, task_selector], [chatbot, msg_input])
+    msg_input.submit(chat_step, [msg_input, chatbot, task_selector], [chatbot, msg_input])
+    reset_btn.click(lambda: [], None, [chatbot])
 
-            def update_ui():
-                df, text = get_leaderboard_data()
-                return df, df, text
+    # Leaderboard Events
+    def update_ui():
+        df, text = get_leaderboard_data()
+        return df, df, text
 
-            refresh_btn.click(update_ui, outputs=[plot, leaderboard_table, accuracy_text])
-            run_btn.click(trigger_benchmark, outputs=[plot, leaderboard_table, accuracy_text])
-            
-            # Load initial data
-            demo.load(update_ui, outputs=[plot, leaderboard_table, accuracy_text])
+    refresh_btn.click(update_ui, outputs=[plot, leaderboard_table, accuracy_text])
+    run_btn.click(trigger_benchmark, outputs=[plot, leaderboard_table, accuracy_text])
+    
+    # Initialization
+    demo.load(update_ui, outputs=[plot, leaderboard_table, accuracy_text])
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7860)
