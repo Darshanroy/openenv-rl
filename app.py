@@ -153,6 +153,15 @@ with st.sidebar:
         reset_chat(selected_task)
         st.rerun()
 
+    if st.button("🗑️ Wipe All Logs & Metrics", use_container_width=True):
+        import shutil
+        if os.path.exists("logs"): shutil.rmtree("logs")
+        if os.path.exists(METRICS_FILE): os.remove(METRICS_FILE)
+        os.makedirs("logs", exist_ok=True)
+        st.success("All historical logs wiped!")
+        time.sleep(1)
+        st.rerun()
+
     with st.expander("📖 Agent Protocol Rules"):
         st.markdown("""
         **1. Strict Routing**: Requests always pass from Router → Specialist → Supervisor.
@@ -173,11 +182,20 @@ with tab_chat:
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🤖"):
             st.markdown(msg["content"])
+            
+            # Show Detailed Background (Trace) if available
             if "trace" in msg and msg["trace"]:
-                with st.expander(f"🔍 Agent Pipeline Activity: {msg['agent_flow']}"):
+                with st.expander(f"🔍 Agent Activity & Reasoning: {msg['agent_flow']}"):
                     st.markdown(msg["trace"])
-            if "env" in msg and msg["env"]:
-                st.info(f"📡 Environment Database:\n\n{msg['env']}")
+            
+            # Show Environment Data if not a final answer
+            if "env" in msg and msg["env"] and not msg.get("is_final"):
+                st.caption("📡 **Environment Data Snapshot:**")
+                st.code(msg["env"], language="json")
+
+            # Show Reward if it was a final step
+            if msg.get("score") is not None:
+                st.success(f"🎯 **Final Task Reward: {msg['score']:.2f} / 1.0**")
 
     # Handle incoming messages
     if user_input := st.chat_input("Type your message here..."):
@@ -223,22 +241,36 @@ with tab_chat:
 
             # Result Rendering
             flow_line = trace.flow()
-            st.markdown(f"**Final Agent Output:**\n`{action}`")
             
-            if obs_text:
+            # Realworld Answer Logic: Extract content from [respond('...')]
+            import re
+            is_final = False
+            display_content = action
+            reward_score = None
+            
+            respond_match = re.search(r"\[respond\('(.*?)'\)\]", action, re.DOTALL)
+            if respond_match:
+                display_content = respond_match.group(1).replace("\\'", "'")
+                is_final = True
+            
+            st.markdown(display_content)
+            
+            if not is_final and obs_text:
                 st.info(f"📡 Environment Data Sync:\n\n{obs_text}")
                 
             if res.done:
-                score = res.metadata.get("grader_score", 0.0)
-                st.success(f"✅ **Task Ended** — Final Grader Score: **{score:.2f}**")
+                reward_score = res.metadata.get("grader_score", 0.0)
+                st.success(f"✅ **Task Resolved** — Reward: **{reward_score:.2f}**")
             
             # Save to state
             st.session_state.messages.append({
                 "role": "assistant", 
-                "content": f"**Final Action:** `{action}`", 
+                "content": display_content, 
+                "is_final": is_final,
                 "trace": trace.summary(),
                 "agent_flow": flow_line,
-                "env": obs_text if obs_text else None
+                "env": obs_text if obs_text else None,
+                "score": reward_score
             })
             st.rerun()
 

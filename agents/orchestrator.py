@@ -85,13 +85,13 @@ class Orchestrator:
 
         # Step 3: Specialist generates tool call
         specialist = self.specialists[agent_type]
-        trace.add(specialist.name, specialist.emoji, "Generating tool call...")
-
-        action = specialist.generate_action(
+        
+        thought, action = specialist.generate_action(
             observation_text=observation_text,
             history_text=history_text
         )
-        trace.add(specialist.name, specialist.emoji, f"Action: `{action[:80]}`")
+        
+        trace.add(specialist.name, specialist.emoji, f"Action: `{action[:80]}`", detail=f"**Background:** {thought}")
 
         # Step 4: Supervisor reviews (lightweight — only for 'respond' actions)
         if "[respond(" in action:
