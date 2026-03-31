@@ -89,21 +89,24 @@ class SpecialistAgent:
         Given the current observation (environment feedback), generate thoughts and the next tool call.
         Returns (thought, action).
         """
+        # Trim history to keep it fast
+        history_lines = history_text.split("\n")
+        short_history = "\n".join(history_lines[-6:])  # Last ~3 full turns
+
         prompt = (
             f"{self.config['system_prompt']}\n\n"
-            f"Conversation so far:\n{history_text}\n\n"
-            f"Current observation: {observation_text}\n\n"
-            f"Your next reasoning and action:"
+            f"History:\n{short_history}\n\n"
+            f"Obs: {observation_text}\n\n"
+            f"Next Reasoning & Action:"
         )
 
-        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(self.device)
+        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=384).to(self.device)
 
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_new_tokens=150,
-                temperature=0.7,
-                do_sample=True,
+                max_new_tokens=100,
+                do_sample=False,
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
