@@ -5,15 +5,18 @@ import os
 import sys
 import time
 import requests
+import pandas as pd
 from typing import List, Dict
 
 # Ensure local imports work
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from my_env.client import SupportEnvClient, Action
+from training.inference import run_benchmark
+from training.config import METRICS_FILE, ENV_SERVER_URL
 
 # Constants
 MODEL_NAME = "Qwen/Qwen2.5-1.5B"
-ENV_URL = "http://127.0.0.1:8000"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Scenarios from OpenEnv CSA
 SCENARIOS = [
@@ -24,7 +27,6 @@ SCENARIOS = [
 
 # Load Model and Tokenizer
 print(f"Loading model {MODEL_NAME}...")
-device = "cuda" if torch.cuda.is_available() else "cpu"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME, 
@@ -32,23 +34,31 @@ model = AutoModelForCausalLM.from_pretrained(
     device_map="auto"
 )
 
-client = SupportEnvClient(base_url=ENV_URL)
+client = SupportEnvClient(base_url=ENV_SERVER_URL)
 
-def wait_for_server(url, timeout=30):
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            response = requests.get(f"{url}/health")
-            if response.status_code == 200:
-                print("Environment server is up!")
-                return True
-        except:
-            pass
-        time.sleep(1)
-    return False
+def wait_for_server(url, timeout=5):
+    try:
+        response = requests.get(f"{url}/health")
+        return response.status_code == 200
+    except:
+        return False
+
+def get_leaderboard_data():
+    if os.path.exists(METRICS_FILE):
+        df = pd.read_csv(METRICS_FILE)
+        # Filter out the global average for the bar chart
+        chart_df = df[df["Scenario"] != "GLOBAL_AVERAGE"]
+        avg_row = df[df["Scenario"] == "GLOBAL_AVERAGE"]
+        avg_score = avg_row["Score"].values[0] if not avg_row.empty else 0.0
+        return chart_df, f"Current Accuracy: {avg_score*100:.1f}%"
+    return pd.DataFrame(columns=["Scenario", "Score"]), "No benchmark data found. Run a benchmark to start tracking."
+
+def trigger_benchmark():
+    run_benchmark(save_to_csv=True)
+    return get_leaderboard_data()
 
 def predict(message, history, task_id):
-    if not wait_for_server(ENV_URL, timeout=5):
+    if not wait_for_server(ENV_SERVER_URL):
         return "Error: Environment server is not responding. Please check logs."
 
     # If history is empty, it's a new session
@@ -56,42 +66,61 @@ def predict(message, history, task_id):
         res = client.reset(task_id=task_id)
         obs = res.observation
     else:
-        # Step with the message (assuming it's a tool call or response)
         res = client.step(Action(message=message))
         obs = res.observation
     
-    # Simple model inference (this is a placeholder for the actual RL agent logic)
-    # In a real deployment, you'd use the trained model weights.
-    prompt = f"System: You are a Customer Support Agent. Use tools or respond to the user.\n"
-    prompt += f"Scenario: {task_id}\n"
-    prompt += f"Observation: {obs}\n"
-    prompt += "Assistant:"
-    
-    inputs = tokenizer(prompt, return_tensors="pt").to(device)
+    prompt = f"System: You are a Customer Support Agent. Use tools or respond to the user.\nScenario: {task_id}\nObservation: {obs}\nAssistant:"
+    inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
     outputs = model.generate(**inputs, max_new_tokens=100)
     response = tokenizer.decode(outputs[0], skip_special_tokens=True).split("Assistant:")[-1].strip()
-    
-    # If the model suggested a tool call, the user can see it.
-    # In a fully autonomous mode, we would parse and execute it here.
     return response
 
 # UI Layout
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
     gr.Markdown("# 🤖 OpenEnv CSA: Customer Support Agent")
-    gr.Markdown("Interact with our RL-trained agent in various simulated ecommerce scenarios.")
     
-    with gr.Row():
-        task_selector = gr.Dropdown(choices=SCENARIOS, label="Select Scenario", value="easy_status")
-        reset_btn = gr.Button("Reset Environment")
+    with gr.Tabs():
+        with gr.Tab("💬 Agent Chat"):
+            with gr.Row():
+                task_selector = gr.Dropdown(choices=SCENARIOS, label="Select Scenario", value="easy_status")
+                reset_btn = gr.Button("Reset Environment")
 
-    chatbot = gr.ChatInterface(
-        predict,
-        additional_inputs=[task_selector],
-        description="Type a tool call like `[get_order('ORD-101')]` or a text response.",
-        examples=[["[get_order('ORD-101')]"], ["I'm sorry for the delay."]]
-    )
+            chat_ui = gr.ChatInterface(
+                predict,
+                additional_inputs=[task_selector],
+                description="Type a tool call like `[get_order('ORD-101')]` or a text response.",
+            )
 
-    reset_btn.click(lambda: [], outputs=None) # Simple UI reset trigger logic would go here
+        with gr.Tab("📊 Performance Leaderboard"):
+            gr.Markdown("### Agent Master Table Performance")
+            accuracy_text = gr.Markdown("Loading metrics...")
+            
+            with gr.Row():
+                refresh_btn = gr.Button("🔄 Refresh Stats")
+                run_btn = gr.Button("🚀 Run Full Benchmark", variant="primary")
+            
+            plot = gr.BarPlot(
+                value=None,
+                x="Scenario",
+                y="Score",
+                title="Scenario Accuracy (0.0 - 1.0)",
+                vertical=False,
+                y_lim=[0, 1],
+                width=800,
+                height=400
+            )
+
+            leaderboard_table = gr.DataFrame(label="Latest Benchmarking Results")
+
+            def update_ui():
+                df, text = get_leaderboard_data()
+                return df, df, text
+
+            refresh_btn.click(update_ui, outputs=[plot, leaderboard_table, accuracy_text])
+            run_btn.click(trigger_benchmark, outputs=[plot, leaderboard_table, accuracy_text])
+            
+            # Load initial data
+            demo.load(update_ui, outputs=[plot, leaderboard_table, accuracy_text])
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7860)

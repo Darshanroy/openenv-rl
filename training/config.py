@@ -16,3 +16,9 @@ MAX_PROMPT_LENGTH = 1024
 MAX_COMPLETION_LENGTH = 128
 USE_VLLM = False # False by default for CPU compatibility
 MAX_TURNS = 6
+
+# Logging & Evaluation
+LOG_DIR = "logs"
+METRICS_FILE = os.path.join(LOG_DIR, "evaluation_report.csv")
+WANDB_PROJECT = "openenv-csa"
+LOG_TO_WANDB = False

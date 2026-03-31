@@ -1,17 +1,21 @@
 import sys
 import os
 import time
+import csv
+from datetime import datetime
 
 # Ensure imports work regardless of local execution path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from my_env.client import SupportEnvClient, Action
+from training.config import ENV_SERVER_URL, METRICS_FILE, LOG_DIR
 
-def run_benchmark():
+def run_benchmark(save_to_csv=True):
     """
-    Automated Baseline for all 15 Tasks in the Customer Support curriculum.
+    Automated Evaluation for all 15 Tasks in the Customer Support curriculum.
+    Returns a dictionary of {task_id: score} and the global average.
     """
-    client = SupportEnvClient(base_url="http://127.0.0.1:8011")
+    client = SupportEnvClient(base_url=ENV_SERVER_URL)
     
     scenarios = [
         "easy_status", "easy_payment_fail", "easy_coupon", "easy_account",
@@ -20,12 +24,12 @@ def run_benchmark():
     ]
     
     print("\n" + "="*75)
-    print("OPENENV CSA MASTER TABLE: 15 SCENARIO BENCHMARK (V3.0)")
+    print(f"OPENENV CSA EVALUATION: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*75 + "\n")
 
-    results = []
+    results = {}
     
-    # Cleaned Perfect Sequences
+    # Perfect Baseline Sequences (Model should learn or exceed these)
     moves = {
         "easy_status": ["[get_order('ORD-101')]", "[track_shipment('ORD-101')]", "[respond('April 2nd')]"],
         "easy_payment_fail": ["[get_order('ORD-1414')]", "[respond('Failed')]"],
@@ -55,16 +59,32 @@ def run_benchmark():
                     final_grader = res.info.get("grader_score", 0.0)
                     break
             
-            results.append((tid, final_grader))
+            results[tid] = final_grader
             print(f"[{tid.upper():<22}] -> Score: {final_grader:.2f}")
 
         except Exception as e:
-            print(f"Error testing {tid}: {e}")
+            print(f"Error evaluating {tid}: {e}")
+            results[tid] = 0.0
 
-    avg_grader = sum(r[1] for r in results) / len(results)
+    avg_score = sum(results.values()) / len(results)
     print("\n" + "="*75)
-    print(f"GLOBAL MASTER TABLE PERFORMANCE:  {avg_grader*100:.1f}% ACCURACY")
+    print(f"GLOBAL PERFORMANCE: {avg_score*100:.1f}% ACCURACY")
     print("="*75 + "\n")
+
+    if save_to_csv:
+        if not os.path.exists(LOG_DIR):
+            os.makedirs(LOG_DIR)
+        
+        with open(METRICS_FILE, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["Scenario", "Score", "Timestamp"])
+            ts = datetime.now().isoformat()
+            for tid, score in results.items():
+                writer.writerow([tid, score, ts])
+            writer.writerow(["GLOBAL_AVERAGE", avg_score, ts])
+        print(f"Results saved to {METRICS_FILE}")
+
+    return results, avg_score
 
 if __name__ == "__main__":
     run_benchmark()
