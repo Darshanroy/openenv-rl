@@ -1,12 +1,18 @@
 import random
 from datasets import Dataset
 
-# Initial prompts mapping roughly to the environment simulation scenarios
+# Realistic, varied prompt templates representing real human users in an e-commerce setting.
 PROMPT_TEMPLATES = [
-    "A customer ordered a Boat headset (ORD-101) but claims it hasn't arrived. Discover and resolve the root issue using [track_shipment].",
-    "Customer Darshan is asking for a status update on their Boat headset order (ORD-101). Use the tools to check and respond.",
-    "A customer received their Milton flask (ORD-202) today but it's heavily damaged. Soothe them and process a return and refund.",
-    "User Rahul Verma wants to cancel ORD-303 (Puma Shoes) immediately and wants his money back. Execute the cancellation and refund tool sequence."
+    "Hey where the heck is my Boat headset (ORD-101)?? it was supposed to be here yesterday.",
+    "Status update on ORD-101 pls.",
+    "can u check where my package is? order number is ORD-101 thx",
+    "Umm I just opened my Milton flask (ORD-202) and it's shattered into a million pieces. Unacceptable. Replace or refund.",
+    "the flask i got today (ORD-202) is cracked, how do i send it back?",
+    "Mistake order!! I need to cancel my Puma shoes (ORD-303) right now before it ships.",
+    "pls stop shipment for ORD-303, found it cheaper somewhere else.",
+    "My card got charged twice for ORD-404, please refund the duplicate immediately.",
+    "where is my delivery? tracking for ORD-505 says 'delayed' but gives no info.",
+    "I need a manager right now. My order ORD-606 has been missing for a week and u guys keep ignoring me!"
 ]
 
 def get_train_dataset(size: int = 400) -> Dataset:

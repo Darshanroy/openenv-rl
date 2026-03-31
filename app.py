@@ -19,21 +19,81 @@ MODEL_NAME = "Qwen/Qwen2.5-1.5B"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 SAMPLE_PROMPTS = {
-    "easy_status": ["Where is my order ORD-101?", "When will ORD-101 arrive?", "Status of my latest order?"],
-    "easy_payment_fail": ["My payment for ORD-1414 failed.", "Why did my transaction for ORD-1414 not go through?"],
-    "easy_coupon": ["I have a coupon SAVE10 but it's not working.", "Apply SAVE10 to my cart please."],
-    "easy_account": ["I forgot my password for meera.reddy@example.com.", "Reset my account password."],
-    "medium_delay": ["My order ORD-909 is late.", "Check delay on ORD-909."],
-    "easy_cancel": ["Cancel my order ORD-505 immediately.", "I don't want ORD-505 anymore."],
-    "medium_address": ["Change my address for ORD-1919 to '789 New Street'.", "Wrong address for ORD-1919."],
-    "medium_reschedule": ["Can we reschedule ORD-2323?", "Change delivery date for ORD-2323."],
-    "medium_return": ["I want to return ORD-2020.", "Requesting return for ORD-2020."],
-    "medium_double_charge": ["I was charged twice for ORD-1515.", "Refund the second charge on ORD-1515."],
-    "hard_refund": ["I need a full refund for ORD-2121.", "I want to refund ORD-2121."],
-    "hard_damaged": ["My order ORD-2222 is damaged.", "The box for ORD-2222 was crushed."],
-    "hard_missing": ["My order ORD-1313 shows as delivered but it's not here.", "Missing items from ORD-1313."],
-    "hard_angry": ["I'm EXTREMELY angry! ORD-909 is still missing!", "This is terrible service for ORD-909!"],
-    "hard_escalation": ["I want to speak to your manager about ORD-1414.", "Connect me to a supervisor."]
+    "easy_status": [
+        "Hey where is my order ORD-101?? I ordered it ages ago.", 
+        "can u pls tell me the status of ORD-101", 
+        "Tracking for ORD-101, please."
+    ],
+    "easy_payment_fail": [
+        "my card got declined for ORD-1414 but I have money??", 
+        "Why did my transaction for ORD-1414 fail? Pls help.",
+        "ORD-1414 payment error, what's wrong."
+    ],
+    "easy_coupon": [
+        "I have a coupon SAVE10 but it's not working at checkout!!", 
+        "Apply SAVE10 to my cart please, it keeps saying invalid.",
+        "Code SAVE10 broke for me."
+    ],
+    "easy_account": [
+        "I totally forgot my password for meera.reddy@example.com...", 
+        "can't login to meera.reddy@example.com pls reset",
+        "lockout on meera.reddy@example.com"
+    ],
+    "medium_delay": [
+        "My order ORD-909 is like a week late, what is going on??", 
+        "Check delay on ORD-909. Tracking hasn't updated in days.",
+        "Where the heck is ORD-909?"
+    ],
+    "easy_cancel": [
+        "Cancel my order ORD-505 immediately, found it cheaper somewhere else.", 
+        "I don't want ORD-505 anymore, please stop it from shipping.",
+        "mistake order ORD-505 cancel pls."
+    ],
+    "medium_address": [
+        "Oops I put the wrong address for ORD-1919. Change it to '789 New Street' pls.", 
+        "Update delivery location for ORD-1919 immediately before it ships!",
+        "moved recently, change address on ORD-1919 to 789 New Street."
+    ],
+    "medium_reschedule": [
+        "I'm out of town, can we reschedule ORD-2323?", 
+        "I won't be home for ORD-2323, change the delivery time.",
+        "reschedule ORD-2323"
+    ],
+    "medium_return": [
+        "The items in ORD-2020 don't fit, how do I return them?", 
+        "Requesting a return shipping label for ORD-2020.",
+        "want to return ORD-2020, didn't like it."
+    ],
+    "medium_double_charge": [
+        "UMM why was I charged TWICE for ORD-1515??? Fix this now.", 
+        "Refund the second charge on ORD-1515, my bank statement shows two.",
+        "double charge bug on ORD-1515."
+    ],
+    "hard_refund": [
+        "I need a full refund for ORD-2121. The quality is terrible.", 
+        "Give me my money back for ORD-2121 ASAP.",
+        "processing refund for ORD-2121."
+    ],
+    "hard_damaged": [
+        "ORD-2222 arrived completely shattered in pieces! Unbelievable!!!", 
+        "The box for ORD-2222 was crushed and the item is ruined.",
+        "item broken in ORD-2222."
+    ],
+    "hard_missing": [
+        "Tracking for ORD-1313 shows as 'Delivered' but there is literally nothing on my porch.", 
+        "Missing items from ORD-1313. I checked everywhere, even with neighbors.",
+        "ORD-1313 says delivered, it's NOT here."
+    ],
+    "hard_angry": [
+        "I AM EXTREMELY FURIOUS! ORD-909 IS STILL MISSING AND NOBODY IS HELPING ME!!!", 
+        "YOUR SERVICE IS PATHETIC! I'VE WAITED WEEKS FOR ORD-909 AND NOTHING!",
+        "Worst experience ever. Where is ORD-909, you guys are a scam."
+    ],
+    "hard_escalation": [
+        "I want to speak to your manager about ORD-1414 right away.", 
+        "This is ridiculous. Escalate my case for ORD-1414 to someone higher up.",
+        "Connect me to a human supervisor now, I'm done with bots."
+    ]
 }
 SCENARIOS = list(SAMPLE_PROMPTS.keys())
 
