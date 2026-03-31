@@ -196,71 +196,93 @@ with tab_chat:
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
-
-        # Agent Processing Turn
+        
+        # Agent Processing Turn (Autonomous Loop)
         with st.chat_message("assistant", avatar="🤖"):
-            with st.status(f"Pipeline active. Routing intent...", expanded=True) as status:
+            with st.status(f"Agent Processing Trace...", expanded=True) as status:
                 
-                # Build context (User, Assistant, and Environment feedback)
-                history_items = []
+                current_obs = f"Customer says: {user_input}"
+                max_substeps = 5
+                substep = 0
+                step_notes = ""
+                cumulative_history_items = []
+                
+                # Seed history with what's already in the session
                 for x in st.session_state.messages:
-                    role_label = "Customer" if x['role'] == "user" else "Agent"
-                    history_items.append(f"{role_label}: {x['content']}")
-                    if x.get("env"):
-                        history_items.append(f"Environment: {x['env']}")
+                    cumulative_history_items.append(f"{'Customer' if x['role']=='user' else 'Agent'}: {x['content']}")
+                    if x.get("env"): cumulative_history_items.append(f"Environment: {x['env']}")
                 
-                history_text = "\n".join(history_items)
-                
-                # multi-agent processing
-                status.update(label="Running Router & Specialist...")
-                action, trace = orchestrator.process(
-                    customer_message=user_input,
-                    observation_text=f"Customer says: {user_input}",
-                    task_id=selected_task,
-                    history_text=history_text
-                )
-                
-                # Env step
-                status.update(label=f"Executing Tool: {action}")
-                res = client.step(SupportAction(message=action))
-                obs_text = ""
-                if res.messages:
-                    last_msg = res.messages[-1]
-                    obs_text = last_msg["content"]
+                final_action = None
+                final_res = None
+                display_content = "I'm still thinking about that..."
+                is_final_msg = False
+                all_flows = []
 
-                status.update(label="Supervisor generated final output", state="complete")
+                while substep < max_substeps:
+                    substep += 1
+                    status.update(label=f"Step {substep}: Thinking...")
+                    
+                    # Build history text
+                    history_text = "\n".join(cumulative_history_items)
+                    
+                    # 1. Routing & Thinking
+                    action, trace = orchestrator.process(
+                        customer_message=user_input,
+                        observation_text=current_obs,
+                        task_id=selected_task,
+                        history_text=history_text
+                    )
+                    
+                    final_action = action
+                    all_flows.append(trace.flow())
+                    step_notes += f"\n\n### turn {substep}\n{trace.summary()}"
+                    
+                    # 2. Check for final response [respond('...')]
+                    import re
+                    respond_match = re.search(r"\[respond\('(.*?)'\)\]", action, re.DOTALL)
+                    if respond_match:
+                        display_content = respond_match.group(1).replace("\\'", "'")
+                        is_final_msg = True
+                        break
+                    
+                    # 3. Handle Tool Call
+                    status.update(label=f"Step {substep}: Executing {action[:30]}...")
+                    try:
+                        res = client.step(SupportAction(message=action))
+                        final_res = res
+                        obs_text = res.messages[-1]["content"] if res.messages else "Received tool success."
+                        current_obs = f"Environment Output: {obs_text}"
+                        
+                        # Update local history for next sub-step
+                        cumulative_history_items.append(f"Agent: {action}")
+                        cumulative_history_items.append(f"Environment: {obs_text}")
+                        
+                        if res.done: break # Scenario resolved
+                    except Exception as e:
+                        st.error(f"Tool execution failed: {e}")
+                        break
+                
+                status.update(label=f"Processing complete in {substep} steps", state="complete")
 
             # Result Rendering
-            flow_line = trace.flow()
-            
-            # Realworld Answer Logic: Extract content from [respond('...')]
-            import re
-            is_final = False
-            display_content = action
-            reward_score = None
-            
-            respond_match = re.search(r"\[respond\('(.*?)'\)\]", action, re.DOTALL)
-            if respond_match:
-                display_content = respond_match.group(1).replace("\\'", "'")
-                is_final = True
-            
             st.markdown(display_content)
             
-            if not is_final and obs_text:
-                st.info(f"📡 Environment Data Sync:\n\n{obs_text}")
-                
-            if res.done:
-                reward_score = res.metadata.get("grader_score", 0.0)
-                st.success(f"✅ **Task Resolved** — Reward: **{reward_score:.2f}**")
+            # Show Environment Data from LAST tool call if it wasn't a final respond (or if requested)
+            last_env_obs = final_res.messages[-1]["content"] if (final_res and final_res.messages) else None
+            
+            reward_score = None
+            if final_res and final_res.done:
+                reward_score = final_res.metadata.get("grader_score", 0.0)
+                st.success(f"✅ **Task Resolved** — Final Reward: **{reward_score:.2f}**")
             
             # Save to state
             st.session_state.messages.append({
                 "role": "assistant", 
                 "content": display_content, 
-                "is_final": is_final,
-                "trace": trace.summary(),
-                "agent_flow": flow_line,
-                "env": obs_text if obs_text else None,
+                "is_final": is_final_msg,
+                "trace": step_notes,
+                "agent_flow": " → ".join(all_flows),
+                "env": last_env_obs,
                 "score": reward_score
             })
             st.rerun()
