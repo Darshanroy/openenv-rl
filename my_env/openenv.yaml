@@ -1,35 +1,149 @@
 name: "CustomerSupport-v1"
-author: "OpenEnv Developer"
-description: "Realistic multi-turn support environment with 3 task tiers (Easy, Medium, Hard)."
-version: 1.1.0
+author: "Darshankumarr03"
+description: >
+  A realistic multi-turn e-commerce customer support environment with 15 tasks
+  across 3 difficulty tiers. Agents must use domain-specific tools (order lookup,
+  shipment tracking, returns, refunds, escalation) to resolve customer issues
+  within a turn limit. Designed for training and evaluating RL agents via GRPO.
+version: "2.0.0"
 entry_point: "my_env.server.my_environment:SupportEnvironment"
+
+action_space:
+  type: "text"
+  format: "Tool calls in brackets: [tool_name('param1', 'param2')]"
+  examples:
+    - "[get_order('ORD-101')]"
+    - "[track_shipment('ORD-101')]"
+    - "[respond('Your order arrives April 2nd.')]"
+    - "[escalate_to_human('Customer requests manager')]"
+
+observation_space:
+  type: "structured"
+  fields:
+    prompt: "System instructions with available tools"
+    messages: "List of Message objects (category: CUSTOMER|AGENT|FEEDBACK|SYSTEM, content: str)"
+
 tasks:
+  # ── Easy (5 tasks) ──
   - id: "easy_status"
-    name: "Standard Order Status Query"
+    name: "Order Status Query"
     difficulty: "easy"
-    description: "Fetch order and shipment status."
-  - id: "medium_return"
-    name: "Valid Return & Refund Request"
-    difficulty: "medium"
-    description: "Validate a return window and initiate a refund for a damaged item."
-  - id: "hard_fraud"
-    name: "Fraudulent Charge Escalation"
-    difficulty: "hard"
-    description: "Identify unauthorized charge, cancel order, and escalate to human supervisor."
-  - id: "easy_payment"
-    name: "Standard Payment Status Check"
+    description: "Fetch order and shipment status for ORD-101."
+    optimal_steps: 3
+    grader: "weighted tool coverage"
+
+  - id: "easy_payment_fail"
+    name: "Payment Failure Check"
     difficulty: "easy"
-    description: "Check if a transaction ID was successfully processed."
+    description: "Look up order ORD-1414 and explain the failed payment."
+    optimal_steps: 2
+    grader: "weighted tool coverage"
+
+  - id: "easy_coupon"
+    name: "Coupon Validation"
+    difficulty: "easy"
+    description: "Validate coupon code SAVE10 and inform customer."
+    optimal_steps: 2
+    grader: "weighted tool coverage"
+
+  - id: "easy_account"
+    name: "Password Reset"
+    difficulty: "easy"
+    description: "Reset password for meera.reddy@example.com."
+    optimal_steps: 2
+    grader: "weighted tool coverage"
+
+  - id: "easy_cancel"
+    name: "Order Cancellation"
+    difficulty: "easy"
+    description: "Cancel pending order ORD-505."
+    optimal_steps: 2
+    grader: "weighted tool coverage"
+
+  # ── Medium (5 tasks) ──
   - id: "medium_delay"
     name: "Shipment Delay Investigation"
     difficulty: "medium"
-    description: "Investigate a delayed delivery and track the item."
-  - id: "hard_cancel_shipped"
-    name: "Complex Cancellation (Already Shipped)"
+    description: "Investigate delayed delivery for ORD-909 and provide update."
+    optimal_steps: 3
+    grader: "weighted tool coverage"
+
+  - id: "medium_address"
+    name: "Address Change"
+    difficulty: "medium"
+    description: "Update delivery address for ORD-1919."
+    optimal_steps: 2
+    grader: "weighted tool coverage"
+
+  - id: "medium_reschedule"
+    name: "Delivery Rescheduling"
+    difficulty: "medium"
+    description: "Check slots and reschedule ORD-2323."
+    optimal_steps: 3
+    grader: "weighted tool coverage"
+
+  - id: "medium_return"
+    name: "Return Request"
+    difficulty: "medium"
+    description: "Validate return window and create return for ORD-2020."
+    optimal_steps: 3
+    grader: "weighted tool coverage"
+
+  - id: "medium_double_charge"
+    name: "Double Charge Refund"
+    difficulty: "medium"
+    description: "Detect double charge on ORD-1515 and initiate refund."
+    optimal_steps: 2
+    grader: "weighted tool coverage"
+
+  # ── Hard (5 tasks) ──
+  - id: "hard_refund"
+    name: "Cancelled Order Refund"
     difficulty: "hard"
-    description: "Handle a request to cancel an order that is already in transit."
+    description: "Validate return eligibility and process refund for ORD-2121."
+    optimal_steps: 3
+    grader: "weighted tool coverage"
+
+  - id: "hard_damaged"
+    name: "Damaged Item Claim"
+    difficulty: "hard"
+    description: "Request proof, validate return, and refund ORD-2222. Must ask_proof first."
+    optimal_steps: 4
+    grader: "weighted tool coverage"
+
+  - id: "hard_missing"
+    name: "Missing Package Investigation"
+    difficulty: "hard"
+    description: "Track, investigate, and escalate missing ORD-1313."
+    optimal_steps: 4
+    grader: "weighted tool coverage"
+
+  - id: "hard_angry"
+    name: "Angry Customer De-escalation"
+    difficulty: "hard"
+    description: "Handle abusive customer about ORD-909 with empathy."
+    optimal_steps: 3
+    grader: "weighted tool coverage"
+
+  - id: "hard_escalation"
+    name: "Manager Escalation"
+    difficulty: "hard"
+    description: "Recognize escalation request and hand off ORD-1414 to human."
+    optimal_steps: 2
+    grader: "weighted tool coverage"
+
 reward_config:
-  step_penalty: -0.1
-  partial_progress: 0.3
-  syntax_error: -1.0
-  success_max: 1.0
+  step_penalty: -1.0
+  syntax_error: -4.0
+  unknown_tool: -5.0
+  execution_error: -5.0
+  resolution_bonus: 10.0
+  efficiency_bonus: 3.0
+  intent_rewards: "per-task, ranging +2 to +12"
+  grader_range: [0.0, 1.0]
+
+tags:
+  - openenv
+  - customer-support
+  - multi-agent
+  - reinforcement-learning

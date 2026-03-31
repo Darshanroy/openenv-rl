@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from my_env.client import SupportEnvClient, Action
 from training.inference import run_benchmark
 from training.config import METRICS_FILE, ENV_SERVER_URL
+from agents.orchestrator import Orchestrator
 
 # ── Constants ──────────────────────────────────────────────────────────────
 MODEL_NAME = "Qwen/Qwen2.5-1.5B"
@@ -34,64 +35,68 @@ SAMPLE_PROMPTS = {
     "hard_angry": ["I'm EXTREMELY angry! ORD-909 is still missing!", "This is terrible service for ORD-909!", "Worst experience ever with ORD-909!"],
     "hard_escalation": ["I want to speak to your manager about ORD-1414.", "Escalate my case for ORD-1414.", "Connect me to a supervisor."]
 }
-
 SCENARIOS = list(SAMPLE_PROMPTS.keys())
 
 TOOL_CATALOG_MD = """
 ### 🛠️ Agent Tool Catalog
-The agent uses these APIs to interact with the database:
 
-**Order Management**
-- `get_order(order_id)` — Details like items, price, and status.
-- `cancel_order(order_id)` — Cancels pending orders.
+**📦 Order Agent Tools**
+- `get_order(id)` — Order details
+- `cancel_order(id)` — Cancel pending orders
+- `validate_coupon(code)` — Apply discounts
+- `reset_password(email)` — Account recovery
 
-**Logistics & Delivery**
-- `track_shipment(order_id)` — Live tracking data.
-- `update_address(order_id, addr)` — Changes destination.
-- `check_delivery_slot(order_id)` — Available time-slots.
-- `reschedule_delivery(order_id, slot)` — Changes delivery time.
+**🚚 Logistics Agent Tools**
+- `track_shipment(id)` — Live tracking
+- `update_address(id, addr)` — Change destination
+- `check_delivery_slot(id)` — Available slots
+- `reschedule_delivery(id, slot)` — Reschedule
+- `investigate_missing(id)` — Missing item case
 
-**Returns & Refunds**
-- `validate_return(order_id)` — Eligibility check.
-- `ask_proof(order_id)` — Requests damage photo.
-- `create_return_request(order_id)` — Creates return label.
-- `initiate_refund(order_id)` — Reverses payment.
+**💰 Finance Agent Tools**
+- `validate_return(id)` — Return eligibility
+- `ask_proof(id)` — Request damage evidence
+- `create_return_request(id)` — Create return
+- `initiate_refund(id)` — Reverse payment
 
-**Support**
-- `validate_coupon(code)` — Applied discounts.
-- `reset_password(email)` — Account recovery.
-- `escalate_to_human(issue)` — Human handover.
+**👨‍💼 Supervisor Tools**
+- `escalate_to_human(reason)` — Human handover
+- `respond(msg)` — Final customer response
 """
 
 RULES_MD = """
-**Rule 1 — Tool-Call Format**
-The agent communicates with the database using brackets: `[tool_name('param')]`
+**Rule 1 — Multi-Agent Pipeline**
+Every request flows: 🧭 Router → Specialist → 👨‍💼 Supervisor
 
-**Rule 2 — Turn Limit**
-Every interaction has a **6-turn limit**. 
+**Rule 2 — Tool-Call Format**
+Agents use brackets: `[tool_name('param')]`
 
-**Rule 3 — Respond**
-The agent must call `[respond('msg')]` to finish.
+**Rule 3 — Turn Limit**
+Max **6 turns** per interaction.
 
 **Rule 4 — Escalation**
-Use `[escalate_to_human('reason')]` for angry cases.
+Angry/security issues bypass specialists → Supervisor direct.
+
+**Rule 5 — Restricted Tools**
+Each specialist can ONLY use its own tool set.
 """
 
-# Theme Setup (Version-safe syntax)
-theme = gr.themes.Soft(primary_hue="blue", secondary_hue="indigo")
-
-# ── Load Model & Tokenizer ────────────────────────────────────────────────
+# ── Load Model & Create Multi-Agent System ─────────────────────────────────
 print(f"Loading {MODEL_NAME}...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
 model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME, 
+    MODEL_NAME,
     torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
     device_map="auto"
 )
+
+print("Initializing Multi-Agent Orchestrator...")
+orchestrator = Orchestrator(model, tokenizer, DEVICE)
 client = SupportEnvClient(base_url=ENV_SERVER_URL)
 
-
-# ── Helper functions ──────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────
 def wait_for_server(url):
     try: return requests.get(f"{url}/health").status_code == 200
     except: return False
@@ -115,37 +120,68 @@ def update_samples(task_id):
     return gr.Dropdown(choices=samples, value=samples[0])
 
 def chat_step(message, history, task_id):
-    if not message or not message.strip(): return history, ""
+    """Process one turn through the multi-agent pipeline."""
+    if not message or not message.strip():
+        return history, "", ""
     if not wait_for_server(ENV_SERVER_URL):
         history.append([message, "⚠️ Environment server is not responding."])
-        return history, ""
+        return history, "", "⚠️ Server offline"
 
+    # Reset environment on first message
     if len(history) == 0:
         client.reset(task_id=task_id)
 
-    res = client.step(Action(message=message))
-    obs = res.observation
+    # Build history text for context
+    history_text = "\n".join([f"Customer: {h[0]}\nAgent: {h[1]}" for h in history]) if history else ""
 
-    prompt = f"System: Agent. Use [tool()].\nObs: {obs}\nAssistant:"
-    inputs = tokenizer(prompt, return_tensors="pt").to(DEVICE)
-    outputs = model.generate(**inputs, max_new_tokens=100)
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True).split("Assistant:")[-1].strip()
+    # Get observation from the environment (use message as a step to see what happens)
+    # But first, run it through the multi-agent orchestrator to decide the action
+    action, trace = orchestrator.process(
+        customer_message=message,
+        observation_text=f"Customer says: {message}",
+        task_id=task_id,
+        history_text=history_text
+    )
 
-    history.append([message, response])
-    return history, ""
+    # Execute the action in the environment
+    res = client.step(Action(message=action))
+    obs_text = ""
+    if res.observation and res.observation.messages:
+        last_msg = res.observation.messages[-1]
+        obs_text = last_msg.content
 
-# ── UI APP ──────────────────────────────────────────────────────────────
-with gr.Blocks(theme=theme, title="OpenEnv CSA Dashboard") as demo:
-    gr.Markdown("# 🤖 OpenEnv CSA Dashboard")
-    
+    # Build the display response
+    agent_flow = trace.flow()
+    display_response = f"**{agent_flow}**\n\n"
+
+    if obs_text:
+        display_response += f"📡 Environment: {obs_text}\n\n"
+    display_response += f"🤖 Action: `{action}`"
+
+    if res.done:
+        score = res.info.get("grader_score", 0.0)
+        display_response += f"\n\n✅ **Task Complete** — Grader Score: **{score:.2f}**"
+
+    history.append([message, display_response])
+    trace_md = trace.summary()
+
+    return history, "", trace_md
+
+
+# ── Gradio UI ──────────────────────────────────────────────────────────────
+with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue", secondary_hue="indigo"), title="OpenEnv CSA Dashboard") as demo:
+    gr.Markdown("# 🤖 OpenEnv CSA — Multi-Agent Dashboard")
+    gr.Markdown("A multi-agent RL system: **Router → Specialist → Supervisor** pipeline for e-commerce support.")
+
     with gr.Row():
+        # ── LEFT SIDEBAR ──
         with gr.Column(scale=1, min_width=280):
             gr.Markdown("### ⚙️ Controls")
             task_selector = gr.Dropdown(choices=SCENARIOS, label="1. Active Scenario", value="easy_status")
             reset_btn = gr.Button("♻️ Reset Environment", variant="secondary")
-            
+
             gr.Markdown("---")
-            sample_selector = gr.Dropdown(choices=SAMPLE_PROMPTS["easy_status"], label="2. Samples", value=SAMPLE_PROMPTS["easy_status"][0])
+            sample_selector = gr.Dropdown(choices=SAMPLE_PROMPTS["easy_status"], label="2. Sample Prompts", value=SAMPLE_PROMPTS["easy_status"][0])
             use_sample_btn = gr.Button("✨ Apply Sample", variant="secondary")
 
             with gr.Accordion("📜 Rules of the Agent", open=False):
@@ -153,14 +189,18 @@ with gr.Blocks(theme=theme, title="OpenEnv CSA Dashboard") as demo:
             with gr.Accordion("🛠️ Tool Catalog", open=False):
                 gr.Markdown(TOOL_CATALOG_MD)
 
+        # ── MAIN PANEL ──
         with gr.Column(scale=3):
             with gr.Tabs():
                 with gr.Tab("💬 Agent Conversation"):
-                    chatbot = gr.Chatbot(label="Simulated Chat Session", height=450)
+                    chatbot = gr.Chatbot(label="Multi-Agent Chat", height=400)
                     with gr.Row():
                         msg_input = gr.Textbox(placeholder="Type message…", label="Your Input", scale=4)
                         submit_btn = gr.Button("Send", variant="primary", scale=1)
                     clear_btn = gr.Button("🗑️ Clear Chat")
+
+                    gr.Markdown("### 🔍 Agent Trace")
+                    trace_display = gr.Markdown("_Send a message to see the agent pipeline in action._")
 
                 with gr.Tab("📊 Performance Metrics"):
                     accuracy_text = gr.Markdown("### Loading stats…")
@@ -170,12 +210,13 @@ with gr.Blocks(theme=theme, title="OpenEnv CSA Dashboard") as demo:
                     plot = gr.BarPlot(x="Scenario", y="Score", title="Master Table Success Rate", y_lim=[0, 1], height=400, color="Scenario")
                     leaderboard_table = gr.DataFrame()
 
+    # ── Events ──
     task_selector.change(update_samples, inputs=[task_selector], outputs=[sample_selector])
     use_sample_btn.click(lambda s: s, inputs=[sample_selector], outputs=[msg_input])
-    submit_btn.click(chat_step, [msg_input, chatbot, task_selector], [chatbot, msg_input])
-    msg_input.submit(chat_step, [msg_input, chatbot, task_selector], [chatbot, msg_input])
-    reset_btn.click(lambda: [], outputs=[chatbot])
-    clear_btn.click(lambda: ([], ""), outputs=[chatbot, msg_input])
+    submit_btn.click(chat_step, [msg_input, chatbot, task_selector], [chatbot, msg_input, trace_display])
+    msg_input.submit(chat_step, [msg_input, chatbot, task_selector], [chatbot, msg_input, trace_display])
+    reset_btn.click(lambda: ([], "", "_Send a message to see the agent pipeline._"), outputs=[chatbot, msg_input, trace_display])
+    clear_btn.click(lambda: ([], "", "_Send a message to see the agent pipeline._"), outputs=[chatbot, msg_input, trace_display])
     refresh_btn.click(get_leaderboard_data, outputs=[plot, leaderboard_table, accuracy_text])
     run_btn.click(trigger_benchmark, outputs=[plot, leaderboard_table, accuracy_text])
     demo.load(get_leaderboard_data, outputs=[plot, leaderboard_table, accuracy_text])

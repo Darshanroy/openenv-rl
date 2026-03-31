@@ -3,8 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 import uuid
 
-# In a real deployed PyPI module, this would be `from my_env.models import ...`
-from my_env.models import Action, EnvResult
+from my_env.models import Action, EnvResult, State
 from my_env.server.my_environment import SupportEnvironment
 
 app = FastAPI(title="OpenEnv - Customer Support Environment API")
@@ -26,7 +25,12 @@ def step_env(session_id: str, action: Action):
         return env.step(action, session_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-        
+
+@app.get("/state/{session_id}", response_model=State)
+def get_state(session_id: str):
+    """Returns the current internal state for a session (OpenEnv spec)."""
+    return env.state(session_id)
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
