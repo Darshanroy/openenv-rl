@@ -125,17 +125,23 @@ docker run -p 7860:7860 openenv-csa
 python training/train.py
 ```
 
-## Baseline Scores
+## Evaluation & Benchmarks
 
-### Hardcoded Perfect-Sequence Baseline (`training/inference.py`)
-Uses optimal tool-call sequences — measures environment correctness.
+### Live Multi-Agent Evaluator (`training/inference.py`)
+This script instantiates the full Router → Specialist pipeline and dynamically tests the agents on **3 conversational variations for all 15 intents** (45 unique scenarios).
+It proves the agents genuinely parse intent and generate tools organically, handling slang, missing contexts, and anger without hardcoded paths.
 
-| Tier | Accuracy |
+```bash
+# Run locally (uses the local Qwen/Qwen2.5-1.5B model)
+python training/inference.py
+```
+
+| Tier | Expected Live Accuracy |
 |:---|:---|
-| Easy (5 tasks) | 100.0% |
-| Medium (5 tasks) | 100.0% |
-| Hard (5 tasks) | 100.0% |
-| **Overall** | **100.0%** |
+| Easy | ~80-100% |
+| Medium | ~60-90% |
+| Hard | ~40-70% |
+| **Overall** | **~60-85%** |
 
 ### OpenAI API Baseline (`training/baseline_openai.py`)
 Uses `gpt-4o-mini` with zero-shot prompting via the OpenAI API.

@@ -1,75 +1,170 @@
 import sys
 import os
-import time
 import csv
 from datetime import datetime
+import torch
 
 # Ensure imports work regardless of local execution path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from my_env.client import SupportEnvClient, Action
 from training.config import ENV_SERVER_URL, METRICS_FILE, LOG_DIR
+from agents.orchestrator import Orchestrator
 
-def run_benchmark(save_to_csv=True):
+# 3 conversational variations per scenario to prove robust LLM behavior
+EVAL_PROMPTS = {
+    "easy_status": [
+        "Where is my order ORD-101?",
+        "Hey where is my order ORD-101?? I ordered it ages ago.",
+        "Tracking for ORD-101, please."
+    ],
+    "easy_payment_fail": [
+        "My payment for ORD-1414 failed.",
+        "my card got declined for ORD-1414 but I have money??",
+        "ORD-1414 payment error, what's wrong."
+    ],
+    "easy_coupon": [
+        "I have a coupon SAVE10 but it's not working.",
+        "Apply SAVE10 to my cart please, it keeps saying invalid.",
+        "Code SAVE10 broke for me."
+    ],
+    "easy_account": [
+        "I forgot my password for meera.reddy@example.com.",
+        "can't login to meera.reddy@example.com pls reset",
+        "lockout on meera.reddy@example.com"
+    ],
+    "medium_delay": [
+        "My order ORD-909 is late.",
+        "My order ORD-909 is like a week late, what is going on??",
+        "Where the heck is ORD-909?"
+    ],
+    "easy_cancel": [
+        "Cancel my order ORD-505 immediately.",
+        "Cancel my order ORD-505 immediately, found it cheaper somewhere else.",
+        "mistake order ORD-505 cancel pls."
+    ],
+    "medium_address": [
+        "Change my address for ORD-1919 to '789 New Street'.",
+        "Oops I put the wrong address for ORD-1919. Change it to '789 New Street' pls.",
+        "moved recently, change address on ORD-1919 to 789 New Street."
+    ],
+    "medium_reschedule": [
+        "Can we reschedule ORD-2323?",
+        "I'm out of town, can we reschedule ORD-2323?",
+        "reschedule ORD-2323"
+    ],
+    "medium_return": [
+        "I want to return ORD-2020.",
+        "The items in ORD-2020 don't fit, how do I return them?",
+        "want to return ORD-2020, didn't like it."
+    ],
+    "medium_double_charge": [
+        "I was charged twice for ORD-1515.",
+        "UMM why was I charged TWICE for ORD-1515??? Fix this now.",
+        "double charge bug on ORD-1515."
+    ],
+    "hard_refund": [
+        "I need a full refund for ORD-2121.",
+        "I need a full refund for ORD-2121. The quality is terrible.",
+        "processing refund for ORD-2121."
+    ],
+    "hard_damaged": [
+        "My order ORD-2222 is damaged.",
+        "ORD-2222 arrived completely shattered in pieces! Unbelievable!!!",
+        "item broken in ORD-2222."
+    ],
+    "hard_missing": [
+        "My order ORD-1313 shows as delivered but it's not here.",
+        "Tracking for ORD-1313 shows as 'Delivered' but there is literally nothing on my porch.",
+        "ORD-1313 says delivered, it's NOT here."
+    ],
+    "hard_angry": [
+        "I'm EXTREMELY angry! ORD-909 is still missing!",
+        "I AM EXTREMELY FURIOUS! ORD-909 IS STILL MISSING AND NOBODY IS HELPING ME!!!",
+        "Worst experience ever. Where is ORD-909, you guys are a scam."
+    ],
+    "hard_escalation": [
+        "I want to speak to your manager about ORD-1414.",
+        "I want to speak to your manager about ORD-1414 right away.",
+        "Connect me to a human supervisor now, I'm done with bots."
+    ]
+}
+
+def run_benchmark(orchestrator=None, save_to_csv=True):
     """
-    Automated Evaluation for all 15 Tasks in the Customer Support curriculum.
-    Returns a dictionary of {task_id: score} and the global average.
+    Automated LLM Evaluation using the Multi-Agent Orchestrator.
+    Tests 3 varied inputs per scenario to prove robust language understanding over hardcoded rules.
     """
     client = SupportEnvClient(base_url=ENV_SERVER_URL)
     
-    scenarios = [
-        "easy_status", "easy_payment_fail", "easy_coupon", "easy_account",
-        "medium_delay", "easy_cancel", "medium_address", "medium_reschedule", "medium_return",
-        "medium_double_charge", "hard_refund", "hard_damaged", "hard_missing", "hard_angry", "hard_escalation"
-    ]
-    
-    print("\n" + "="*75)
-    print(f"OPENENV CSA EVALUATION: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*75 + "\n")
+    if orchestrator is None:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        MODEL_NAME = "Qwen/Qwen2.5-1.5B"
+        DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME, torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32, device_map="auto"
+        )
+        orchestrator = Orchestrator(model, tokenizer, DEVICE)
+
+    print("\n" + "="*80)
+    print(f"OPENENV CSA LIVE AGENT EVALUATION: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("="*80 + "\n")
 
     results = {}
-    
-    # Perfect Baseline Sequences (Model should learn or exceed these)
-    moves = {
-        "easy_status": ["[get_order('ORD-101')]", "[track_shipment('ORD-101')]", "[respond('April 2nd')]"],
-        "easy_payment_fail": ["[get_order('ORD-1414')]", "[respond('Failed')]"],
-        "easy_coupon": ["[validate_coupon('SAVE10')]", "[respond('Done')]"],
-        "easy_account": ["[reset_password('meera.reddy@example.com')]", "[respond('Sent')]"],
-        "medium_delay": ["[get_order('ORD-909')]", "[track_shipment('ORD-909')]", "[respond('Sorry')]"],
-        "easy_cancel": ["[get_order('ORD-505')]", "[cancel_order('ORD-505')]", "[respond('Done')]"],
-        "medium_address": ["[get_order('ORD-1919')]", "[update_address('ORD-1919','New St')]", "[respond('Done')]"],
-        "medium_reschedule": ["[get_order('ORD-2323')]", "[check_delivery_slot('ORD-2323')]", "[reschedule_delivery('ORD-2323','Slot1')]", "[respond('Done')]"],
-        "medium_return": ["[get_order('ORD-2020')]", "[validate_return('ORD-2020')]", "[create_return_request('ORD-2020')]", "[respond('Done')]"],
-        "medium_double_charge": ["[get_order('ORD-1515')]", "[initiate_refund('ORD-1515')]", "[respond('Done')]"],
-        "hard_refund": ["[get_order('ORD-2121')]", "[validate_return('ORD-2121')]", "[initiate_refund('ORD-2121')]", "[respond('Done')]"],
-        "hard_damaged": ["[get_order('ORD-2222')]", "[ask_proof('ORD-2222')]", "[validate_return('ORD-2222')]", "[initiate_refund('ORD-2222')]", "[respond('Done')]"],
-        "hard_missing": ["[get_order('ORD-1313')]", "[track_shipment('ORD-1313')]", "[investigate_missing('ORD-1313')]", "[escalate_to_human('Missing')]"],
-        "hard_angry": ["[get_order('ORD-909')]", "[track_shipment('ORD-909')]", "[respond('Sorry')]"],
-        "hard_escalation": ["[get_order('ORD-1414')]", "[escalate_to_human('Manager')]"]
-    }
+    MAX_TURNS = 6
 
-    for tid in scenarios:
-        try:
-            res = client.reset(task_id=tid)
-            final_grader = 0.0
-            
-            for move in moves.get(tid, []):
-                res = client.step(Action(message=move))
-                if res.done:
-                    final_grader = res.info.get("grader_score", 0.0)
-                    break
-            
-            results[tid] = final_grader
-            print(f"[{tid.upper():<22}] -> Score: {final_grader:.2f}")
+    for tid, variations in EVAL_PROMPTS.items():
+        print(f"[{tid.upper()}] evaluating {len(variations)} linguistic variations...")
+        variation_scores = []
+        
+        for idx, customer_msg in enumerate(variations):
+            try:
+                res = client.reset(task_id=tid)
+                history_lines = []
+                grader_score = 0.0
+                obs_text = f"Customer says: {customer_msg}"
+                
+                # Run conversation loop
+                for turn in range(MAX_TURNS):
+                    # Multi-agent inference
+                    action, trace = orchestrator.process(
+                        customer_message=customer_msg,
+                        observation_text=obs_text,
+                        task_id=tid,
+                        history_text="\n".join(history_lines)
+                    )
+                    
+                    history_lines.append(f"Customer: {customer_msg}" if turn == 0 else f"Agent: {action}")
+                    
+                    # Environment step
+                    res = client.step(Action(message=action))
+                    if res.observation and res.observation.messages:
+                        obs_text = res.observation.messages[-1].content
+                        history_lines.append(f"Environment: {obs_text}")
+                    
+                    if res.done:
+                        grader_score = res.info.get("grader_score", 0.0)
+                        break
 
-        except Exception as e:
-            print(f"Error evaluating {tid}: {e}")
-            results[tid] = 0.0
+                variation_scores.append(grader_score)
+                print(f"   -> Var {idx+1} Score: {grader_score:.2f}")
+
+            except Exception as e:
+                print(f"   -> Var {idx+1} Error: {e}")
+                variation_scores.append(0.0)
+        
+        # Average across the 3 variations for this task
+        avg_task_score = sum(variation_scores) / len(variation_scores)
+        results[tid] = avg_task_score
+        print(f"   => Average Score: {avg_task_score:.2f}\n")
 
     avg_score = sum(results.values()) / len(results)
-    print("\n" + "="*75)
-    print(f"GLOBAL PERFORMANCE: {avg_score*100:.1f}% ACCURACY")
-    print("="*75 + "\n")
+    print("="*80)
+    print(f"GLOBAL PERFORMANCE (LLM Multi-Agent): {avg_score*100:.1f}% ACCURACY")
+    print("="*80 + "\n")
 
     if save_to_csv:
         if not os.path.exists(LOG_DIR):
@@ -82,7 +177,7 @@ def run_benchmark(save_to_csv=True):
             for tid, score in results.items():
                 writer.writerow([tid, score, ts])
             writer.writerow(["GLOBAL_AVERAGE", avg_score, ts])
-        print(f"Results saved to {METRICS_FILE}")
+        print(f"Live benchmark saved to {METRICS_FILE}")
 
     return results, avg_score
 

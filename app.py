@@ -246,8 +246,8 @@ with tab_metrics:
     
     with col1:
         if st.button("🚀 Run Full 15-Task Eval", use_container_width=True):
-            with st.spinner("Running Hardcoded Assessment..."):
-                run_benchmark(save_to_csv=True)
+            with st.spinner("Running Multi-Agent Assessment on 3 conversational variations per intent (This will take a few minutes)..."):
+                run_benchmark(orchestrator=orchestrator, save_to_csv=True)
                 st.rerun()
                 
     with col2:
