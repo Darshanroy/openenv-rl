@@ -168,7 +168,7 @@ with tab_chat:
     
     # Render existing Chat History in the container
     with chat_container:
-        for msg in st.session_state.messages:
+        for i, msg in enumerate(st.session_state.messages):
             with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🤖"):
                 st.markdown(msg["content"])
                 
@@ -185,6 +185,24 @@ with tab_chat:
                 # Show Reward if it was a final step
                 if msg.get("score") is not None:
                     st.success(f"🎯 **Final Task Reward: {msg['score']:.2f} / 1.0**")
+
+                # Feedback Buttons restricted to agent outputs
+                if msg["role"] == "assistant":
+                    fcol1, fcol2, _ = st.columns([1, 1, 12])
+                    if fcol1.button("👍", key=f"like_btn_{i}", help="Helpful response"):
+                        client.send_feedback(i, "thumbs_up")
+                        st.toast("Feedback received! Thank you.")
+                    if fcol2.button("👎", key=f"dis_btn_{i}", help="Poor response"):
+                        client.send_feedback(i, "thumbs_down")
+                        st.toast("Feedback received! Thank you.")
+
+        # Display global Exit Button above input if chat is active
+        if st.session_state.messages:
+            _, exit_col = st.columns([10, 2])
+            with exit_col:
+                if st.button("🚪 Exit Chat", type="primary", use_container_width=True):
+                    reset_chat(selected_task)
+                    st.rerun()
 
     # Handle incoming messages
     if user_input := st.chat_input("Type your message here..."):

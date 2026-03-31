@@ -51,6 +51,17 @@ class SupportEnvClient:
         response.raise_for_status()
         return SupportState(**response.json())
 
+    def send_feedback(self, message_index: int, feedback_type: str):
+        """Send RLHF feedback for a specific completed assistant message."""
+        if not self.session_id:
+            raise RuntimeError("Must call reset() before send_feedback()")
+        
+        payload = {"message_index": message_index, "feedback_type": feedback_type}
+        try:
+            requests.post(f"{self.base_url}/session/feedback/{self.session_id}", json=payload)
+        except Exception:
+            pass # Non-blocking on failure
+
     def close(self):
         """Clean up (no persistent sockets in REST mode)."""
         pass

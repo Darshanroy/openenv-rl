@@ -66,12 +66,25 @@ def session_step(session_id: str, action: SupportAction):
     return obs.model_dump()
 
 
+class FeedbackRequest(BaseModel):
+    message_index: int
+    feedback_type: str  # e.g. "thumbs_up", "thumbs_down"
+    
 @app.get("/session/state/{session_id}")
 def session_state(session_id: str):
     """Get state for a session-based episode."""
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found.")
     return _sessions[session_id].state.model_dump()
+
+
+@app.post("/session/feedback/{session_id}")
+def session_feedback(session_id: str, req: FeedbackRequest):
+    """Log feedback for an RLHF dataset or immediate dashboard reporting."""
+    # In a real deployed app, this writes to a DB like Supabase.
+    print(f"✅ [FEEDBACK RECEIVED] Session: {session_id} | Msg_Idx: {req.message_index} | Type: {req.feedback_type}")
+    return {"status": "success", "session_id": session_id, "feedback": req.feedback_type}
+
 
 
 def main():
