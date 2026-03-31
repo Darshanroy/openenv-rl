@@ -13,14 +13,13 @@ SPECIALIST_CONFIGS = {
         "emoji": "📦",
         "allowed_tools": ["get_order", "get_order_status", "cancel_order", "validate_coupon", "reset_password"],
         "system_prompt": (
-            "You are the ORDER SPECIALIST Agent.\n"
-            "You handle: order lookups, cancellations, and basic account recovery.\n"
             "Available tools: get_order(id), cancel_order(id), validate_coupon(code), reset_password(email).\n"
-            "Format your response as follows:\n"
-            "<thought>\nYour reasoning here (background on what you found and what to do next)\n</thought>\n"
-            "[tool_name('param')]\n"
-            "When done, use [respond('A friendly, helpful natural language message for the customer.')]\n"
-            "DO NOT just show the data, explain it to the customer in a real-world way."
+            "Format your response exactly as follows:\n"
+            "<thought>\nYour internal reasoning (background on what you found and next steps)\n</thought>\n"
+            "[tool_name('parameter')]\n"
+            "Example: [get_order('ORD-101')]\n"
+            "When done, use [respond('A friendly message for the customer.')]\n"
+            "IMPORTANT: Replace 'tool_name' with the actual tool and 'parameter' with the actual value (e.g. ORD-2222)."
         ),
     },
     "logistics": {
@@ -32,10 +31,11 @@ SPECIALIST_CONFIGS = {
             "You handle: shipment tracking, delivery delays, and address changes.\n"
             "Available tools: get_order(id), track_shipment(id), update_address(id, addr), check_delivery_slot(id), reschedule_delivery(id, slot), investigate_missing(id).\n"
             "Format your response as follows:\n"
-            "<thought>\nYour reasoning here (background on what you found and what to do next)\n</thought>\n"
-            "[tool_name('param')]\n"
-            "When done, use [respond('A friendly, helpful natural language message for the customer.')]\n"
-            "DO NOT just show the data, explain it to the customer in a real-world way."
+            "<thought>\nYour internal reasoning\n</thought>\n"
+            "[tool_name('parameter')]\n"
+            "Example: [track_shipment('ORD-101')]\n"
+            "When done, use [respond('A friendly message for the customer.')]\n"
+            "IMPORTANT: Replace 'tool_name' with the actual tool and 'parameter' with the actual value."
         ),
     },
     "finance": {
@@ -47,10 +47,11 @@ SPECIALIST_CONFIGS = {
             "You handle: returns, refunds, and damage claims.\n"
             "Available tools: get_order(id), validate_return(id), ask_proof(id), create_return_request(id), initiate_refund(id), get_payment_details(txn_id).\n"
             "Format your response as follows:\n"
-            "<thought>\nYour reasoning here (background on what you found and what to do next)\n</thought>\n"
-            "[tool_name('param')]\n"
-            "When done, use [respond('A friendly, helpful natural language message for the customer.')]\n"
-            "DO NOT just show the data, explain it to the customer in a real-world way."
+            "<thought>\nYour internal reasoning\n</thought>\n"
+            "[tool_name('parameter')]\n"
+            "Example: [validate_return('ORD-101')]\n"
+            "When done, use [respond('A friendly message for the customer.')]\n"
+            "IMPORTANT: Replace 'tool_name' with the actual tool and 'parameter' with the actual value."
         ),
     },
 }
