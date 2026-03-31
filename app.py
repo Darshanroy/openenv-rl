@@ -82,7 +82,7 @@ print(f"Loading {MODEL_NAME}...")
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME, 
-    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+    dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
     device_map="auto"
 )
 client = SupportEnvClient(base_url=ENV_SERVER_URL)
@@ -187,7 +187,7 @@ with gr.Blocks() as demo:
                     plot = gr.BarPlot(
                         value=None, x="Scenario", y="Score",
                         title="Scenario Success Rate (0.0 - 1.0)",
-                        vertical=False, y_lim=[0, 1],
+                        y_lim=[0, 1],
                         width=None, height=400, color="Scenario",
                         tooltip=["Scenario", "Score"]
                     )
