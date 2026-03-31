@@ -124,7 +124,8 @@ def chat_step(message, history, task_id):
     if not message or not message.strip():
         return history, "", ""
     if not wait_for_server(ENV_SERVER_URL):
-        history.append([message, "⚠️ Environment server is not responding."])
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": "⚠️ Environment server is not responding."})
         return history, "", "⚠️ Server offline"
 
     # Reset environment on first message
@@ -132,10 +133,15 @@ def chat_step(message, history, task_id):
         client.reset(task_id=task_id)
 
     # Build history text for context
-    history_text = "\n".join([f"Customer: {h[0]}\nAgent: {h[1]}" for h in history]) if history else ""
+    history_lines = []
+    for h in history:
+        if h.get("role") == "user":
+            history_lines.append(f"Customer: {h['content']}")
+        elif h.get("role") == "assistant":
+            history_lines.append(f"Agent: {h['content']}")
+    history_text = "\n".join(history_lines)
 
-    # Get observation from the environment (use message as a step to see what happens)
-    # But first, run it through the multi-agent orchestrator to decide the action
+    # Run through the multi-agent orchestrator
     action, trace = orchestrator.process(
         customer_message=message,
         observation_text=f"Customer says: {message}",
@@ -162,7 +168,8 @@ def chat_step(message, history, task_id):
         score = res.info.get("grader_score", 0.0)
         display_response += f"\n\n✅ **Task Complete** — Grader Score: **{score:.2f}**"
 
-    history.append([message, display_response])
+    history.append({"role": "user", "content": message})
+    history.append({"role": "assistant", "content": display_response})
     trace_md = trace.summary()
 
     return history, "", trace_md
