@@ -6,10 +6,7 @@ from config import (
     NUM_GENERATIONS, MAX_PROMPT_LENGTH, MAX_COMPLETION_LENGTH, USE_VLLM
 )
 from dataset import get_train_dataset
-from rewards import (
-    reward_grader_score, reward_step_progress, reward_format, 
-    reward_conciseness, reward_repetition, reward_politeness
-)
+from rewards import total_reward
 from rollout import rollout_func
 
 def main():
@@ -39,14 +36,7 @@ def main():
     trainer = GRPOTrainer(
         model=MODEL_NAME,
         processing_class=tokenizer,
-        reward_funcs=[
-            reward_grader_score,     # Final resolution accuracy
-            reward_step_progress,    # Intermediate tool rewards
-            reward_format,           # Syntax compliance
-            reward_conciseness,      # Efficiency and speed
-            reward_repetition,       # Loop avoidance
-            reward_politeness        # Handover protocol
-        ],
+        reward_funcs=[total_reward], # Custom weighted sum of all PPO-stable signals
         train_dataset=dataset,
         args=grpo_config,
         rollout_func=rollout_func,
