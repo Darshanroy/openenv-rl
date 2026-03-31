@@ -1,30 +1,41 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Any, Dict
+"""
+OpenEnv-compliant Pydantic models for the Customer Support environment.
+Inherits from openenv.core base classes (Action, Observation, State).
+openenv.core.Message is a TypedDict: {"role": str, "content": str}
+"""
+from openenv.core import (
+    Action as BaseAction,
+    Observation as BaseObservation,
+    State as BaseState,
+    Message,  # TypedDict, not Pydantic
+)
+from pydantic import Field
+from typing import List, Optional, Dict, Any
 
-class Message(BaseModel):
-    category: str  # "CUSTOMER", "AGENT", "FEEDBACK", "SYSTEM"
-    content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
 
-class Observation(BaseModel):
-    prompt: str
-    messages: List[Message] = Field(default_factory=list)
+class SupportAction(BaseAction):
+    """
+    Action submitted by the agent in the Customer Support environment.
+    Contains the raw tool-call string or final response text.
+    """
+    message: str = ""
 
-class Action(BaseModel):
-    message: str
 
-class State(BaseModel):
-    """Internal environment state for tracking progress & history."""
-    session_id: str
-    current_turn: int
-    max_turns: int
-    history: List[Message] = Field(default_factory=list)
+class SupportObservation(BaseObservation):
+    """
+    Observation returned after each step.
+    Inherits `done` (bool) and `reward` (float|None) from openenv.core.Observation.
+    """
+    prompt: str = ""
+    messages: List[Dict[str, str]] = Field(default_factory=list)
+
+
+class SupportState(BaseState):
+    """
+    Internal episode state.
+    Inherits `episode_id` (str|None) and `step_count` (int) from openenv.core.State.
+    """
+    task_id: str = ""
+    max_steps: int = 8
     tools_used: List[str] = Field(default_factory=list)
     variables: Dict[str, Any] = Field(default_factory=dict)
-    done: bool
-
-class EnvResult(BaseModel):
-    observation: Observation
-    reward: Optional[float] = 0.0
-    done: bool
-    info: Dict[str, Any] = Field(default_factory=dict) # For task scores & metadata

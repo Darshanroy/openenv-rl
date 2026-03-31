@@ -1,43 +1,55 @@
+"""
+OpenEnv-compliant client for the Customer Support Environment.
+Wraps the REST/WebSocket API exposed by the server.
+"""
 import requests
 import uuid
 from typing import Optional
-from .models import Action, EnvResult
+
+from .models import SupportAction, SupportObservation, SupportState
+
 
 class SupportEnvClient:
     """
-    Client connector bridging the RL loop (Training) 
-    with the REST API (Environment).
+    Client connector bridging the RL training loop
+    with the OpenEnv Environment server.
     """
     def __init__(self, base_url: str = "http://127.0.0.1:8000"):
         self.base_url = base_url.rstrip("/")
         self.session_id: Optional[str] = None
-        
-    def reset(self, task_id: Optional[str] = None) -> EnvResult:
-        # Generate unique session ID per training episode
+
+    def reset(self, task_id: Optional[str] = None) -> SupportObservation:
+        """Start a new episode. Returns the initial observation."""
         self.session_id = str(uuid.uuid4())
-        
+
         payload = {"session_id": self.session_id}
         if task_id:
             payload["task_id"] = task_id
-            
+
         response = requests.post(f"{self.base_url}/reset", json=payload)
         response.raise_for_status()
-        
-        data = response.json()
-        return EnvResult(**data)
+        return SupportObservation(**response.json())
 
-    def step(self, action: Action) -> EnvResult:
+    def step(self, action: SupportAction) -> SupportObservation:
+        """Submit an action, receive the next observation."""
         if not self.session_id:
             raise RuntimeError("Must call reset() before step()")
-            
-        # Pydantic handles serialization automatically when dict() is called
-        response = requests.post(f"{self.base_url}/step/{self.session_id}", json=action.dict())
+
+        response = requests.post(
+            f"{self.base_url}/step/{self.session_id}",
+            json=action.model_dump(),
+        )
         response.raise_for_status()
-        
-        data = response.json()
-        return EnvResult(**data)
-        
+        return SupportObservation(**response.json())
+
+    def get_state(self) -> SupportState:
+        """Retrieve the current episode state."""
+        if not self.session_id:
+            raise RuntimeError("Must call reset() before get_state()")
+        response = requests.get(f"{self.base_url}/state/{self.session_id}")
+        response.raise_for_status()
+        return SupportState(**response.json())
+
     def close(self):
-        # We don't hold persistent sockets in this REST mock,
-        # but the OpenEnv standard often expects a close method.
+        """Clean up (no persistent sockets in REST mode)."""
         pass

@@ -11,3 +11,4 @@ streamlit
 python-multipart
 pandas
 openai
+openenv-core

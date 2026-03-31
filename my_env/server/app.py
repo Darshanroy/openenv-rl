@@ -1,36 +1,31 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Optional
-import uuid
-
-from my_env.models import Action, EnvResult, State
+"""
+OpenEnv-compliant FastAPI server for the Customer Support Environment.
+Uses openenv.core.create_app() for full spec compliance.
+"""
+from openenv.core import create_app
+from my_env.models import SupportAction, SupportObservation
 from my_env.server.my_environment import SupportEnvironment
 
-app = FastAPI(title="OpenEnv - Customer Support Environment API")
-env = SupportEnvironment()
 
-class SessionRequest(BaseModel):
-    session_id: str
-    task_id: Optional[str] = None
+def create_environment():
+    """Factory function that returns a fresh SupportEnvironment instance."""
+    return SupportEnvironment(max_turns=8)
 
-@app.post("/reset", response_model=EnvResult)
-def reset_env(req: SessionRequest):
-    """Initializes a new simulated environment interaction loop."""
-    return env.reset(req.session_id, task_id=req.task_id)
 
-@app.post("/step/{session_id}", response_model=EnvResult)
-def step_env(session_id: str, action: Action):
-    """Receives the LLM's selected tool action and processes it."""
-    try:
-        return env.step(action, session_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+app = create_app(
+    env=create_environment,
+    action_cls=SupportAction,
+    observation_cls=SupportObservation,
+    env_name="CustomerSupport-v1",
+    max_concurrent_envs=64,
+)
 
-@app.get("/state/{session_id}", response_model=State)
-def get_state(session_id: str):
-    """Returns the current internal state for a session (OpenEnv spec)."""
-    return env.state(session_id)
 
-@app.get("/health")
-def health_check():
-    return {"status": "ok"}
+def main():
+    """Entry point for `openenv serve` and `[project.scripts]`."""
+    import uvicorn
+    uvicorn.run("my_env.server.app:app", host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()
