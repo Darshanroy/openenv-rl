@@ -163,24 +163,28 @@ tab_chat, tab_metrics, tab_demo = st.tabs(["💬 Live Testing & Flow", "📊 Ben
 
 with tab_chat:
     
-    # Render Chat History
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🤖"):
-            st.markdown(msg["content"])
-            
-            # Show Detailed Background (Trace) if available
-            if "trace" in msg and msg["trace"]:
-                with st.expander(f"🔍 Agent Activity & Reasoning: {msg['agent_flow']}"):
-                    st.markdown(msg["trace"])
-            
-            # Show Environment Data if not a final answer
-            if "env" in msg and msg["env"] and not msg.get("is_final"):
-                st.caption("📡 **Environment Data Snapshot:**")
-                st.code(msg["env"], language="json")
+    # Create a dedicated container for all messages so the chat input stays pinned at the bottom
+    chat_container = st.container()
+    
+    # Render existing Chat History in the container
+    with chat_container:
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🤖"):
+                st.markdown(msg["content"])
+                
+                # Show Detailed Background (Trace) if available
+                if "trace" in msg and msg["trace"]:
+                    with st.expander(f"🔍 Agent Activity & Reasoning: {msg.get('agent_flow', '')}"):
+                        st.markdown(msg["trace"])
+                
+                # Show Environment Data if not a final answer
+                if "env" in msg and msg["env"] and not msg.get("is_final"):
+                    st.caption("📡 **Environment Data Snapshot:**")
+                    st.code(msg["env"], language="json")
 
-            # Show Reward if it was a final step
-            if msg.get("score") is not None:
-                st.success(f"🎯 **Final Task Reward: {msg['score']:.2f} / 1.0**")
+                # Show Reward if it was a final step
+                if msg.get("score") is not None:
+                    st.success(f"🎯 **Final Task Reward: {msg['score']:.2f} / 1.0**")
 
     # Handle incoming messages
     if user_input := st.chat_input("Type your message here..."):
@@ -192,100 +196,101 @@ with tab_chat:
         if len(st.session_state.messages) == 0:
             reset_chat(selected_task)
         
-        # Display User Message
+        # Display User Message inside the container (above the input box)
         st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.chat_message("user", avatar="👤"):
-            st.markdown(user_input)
-        
-        # Agent Processing Turn (Autonomous Loop)
-        with st.chat_message("assistant", avatar="🤖"):
-            with st.status(f"Agent Processing Trace...", expanded=True) as status:
+        with chat_container:
+            with st.chat_message("user", avatar="👤"):
+                st.markdown(user_input)
+            
+            # Agent Processing Turn (Autonomous Loop) inside the container
+            with st.chat_message("assistant", avatar="🤖"):
+                with st.status(f"Agent Processing Trace...", expanded=True) as status:
                 
-                current_obs = f"Customer says: {user_input}"
-                max_substeps = 5
-                substep = 0
-                step_notes = ""
-                cumulative_history_items = []
+                    current_obs = f"Customer says: {user_input}"
+                    max_substeps = 5
+                    substep = 0
+                    step_notes = ""
+                    cumulative_history_items = []
                 
-                # Seed history with what's already in the session
-                for x in st.session_state.messages:
-                    cumulative_history_items.append(f"{'Customer' if x['role']=='user' else 'Agent'}: {x['content']}")
-                    if x.get("env"): cumulative_history_items.append(f"Environment: {x['env']}")
+                    # Seed history with what's already in the session
+                    for x in st.session_state.messages:
+                        cumulative_history_items.append(f"{'Customer' if x['role']=='user' else 'Agent'}: {x['content']}")
+                        if x.get("env"): cumulative_history_items.append(f"Environment: {x['env']}")
                 
-                final_action = None
-                final_res = None
-                display_content = "I'm still thinking about that..."
-                is_final_msg = False
-                all_flows = []
+                    final_action = None
+                    final_res = None
+                    display_content = "I'm still thinking about that..."
+                    is_final_msg = False
+                    all_flows = []
 
-                while substep < max_substeps:
-                    substep += 1
-                    status.update(label=f"Step {substep}: Thinking...")
+                    while substep < max_substeps:
+                        substep += 1
+                        status.update(label=f"Step {substep}: Thinking...")
                     
-                    # Build history text
-                    history_text = "\n".join(cumulative_history_items)
+                        # Build history text
+                        history_text = "\n".join(cumulative_history_items)
                     
-                    # 1. Routing & Thinking
-                    action, trace = orchestrator.process(
-                        customer_message=user_input,
-                        observation_text=current_obs,
-                        task_id=selected_task,
-                        history_text=history_text
-                    )
+                        # 1. Routing & Thinking
+                        action, trace = orchestrator.process(
+                            customer_message=user_input,
+                            observation_text=current_obs,
+                            task_id=selected_task,
+                            history_text=history_text
+                        )
                     
-                    final_action = action
-                    all_flows.append(trace.flow())
-                    step_notes += f"\n\n### turn {substep}\n{trace.summary()}"
+                        final_action = action
+                        all_flows.append(trace.flow())
+                        step_notes += f"\n\n### turn {substep}\n{trace.summary()}"
                     
-                    # 2. Check for final response [respond('...')]
-                    import re
-                    respond_match = re.search(r"\[respond\('(.*?)'\)\]", action, re.DOTALL)
-                    if respond_match:
-                        display_content = respond_match.group(1).replace("\\'", "'")
-                        is_final_msg = True
-                        break
+                        # 2. Check for final response [respond('...')]
+                        import re
+                        respond_match = re.search(r"\[respond\('(.*?)'\)\]", action, re.DOTALL)
+                        if respond_match:
+                            display_content = respond_match.group(1).replace("\\'", "'")
+                            is_final_msg = True
+                            break
                     
-                    # 3. Handle Tool Call
-                    status.update(label=f"Step {substep}: Executing {action[:30]}...")
-                    try:
-                        res = client.step(SupportAction(message=action))
-                        final_res = res
-                        obs_text = res.messages[-1]["content"] if res.messages else "Received tool success."
-                        current_obs = f"Environment Output: {obs_text}"
+                        # 3. Handle Tool Call
+                        status.update(label=f"Step {substep}: Executing {action[:30]}...")
+                        try:
+                            res = client.step(SupportAction(message=action))
+                            final_res = res
+                            obs_text = res.messages[-1]["content"] if res.messages else "Received tool success."
+                            current_obs = f"Environment Output: {obs_text}"
                         
-                        # Update local history for next sub-step
-                        cumulative_history_items.append(f"Agent: {action}")
-                        cumulative_history_items.append(f"Environment: {obs_text}")
+                            # Update local history for next sub-step
+                            cumulative_history_items.append(f"Agent: {action}")
+                            cumulative_history_items.append(f"Environment: {obs_text}")
                         
-                        if res.done: break # Scenario resolved
-                    except Exception as e:
-                        st.error(f"Tool execution failed: {e}")
-                        break
+                            if res.done: break # Scenario resolved
+                        except Exception as e:
+                            st.error(f"Tool execution failed: {e}")
+                            break
                 
-                status.update(label=f"Processing complete in {substep} steps", state="complete")
+                    status.update(label=f"Processing complete in {substep} steps", state="complete")
 
-            # Result Rendering
-            st.markdown(display_content)
+                # Result Rendering
+                st.markdown(display_content)
             
-            # Show Environment Data from LAST tool call if it wasn't a final respond (or if requested)
-            last_env_obs = final_res.messages[-1]["content"] if (final_res and final_res.messages) else None
+                # Show Environment Data from LAST tool call if it wasn't a final respond (or if requested)
+                last_env_obs = final_res.messages[-1]["content"] if (final_res and final_res.messages) else None
             
-            reward_score = None
-            if final_res and final_res.done:
-                reward_score = final_res.metadata.get("grader_score", 0.0)
-                st.success(f"✅ **Task Resolved** — Final Reward: **{reward_score:.2f}**")
+                reward_score = None
+                if final_res and final_res.done:
+                    reward_score = final_res.metadata.get("grader_score", 0.0)
+                    st.success(f"✅ **Task Resolved** — Final Reward: **{reward_score:.2f}**")
             
-            # Save to state
-            st.session_state.messages.append({
-                "role": "assistant", 
-                "content": display_content, 
-                "is_final": is_final_msg,
-                "trace": step_notes,
-                "agent_flow": " → ".join(all_flows),
-                "env": last_env_obs,
-                "score": reward_score
-            })
-            st.rerun()
+                # Save to state
+                st.session_state.messages.append({
+                    "role": "assistant", 
+                    "content": display_content, 
+                    "is_final": is_final_msg,
+                    "trace": step_notes,
+                    "agent_flow": " → ".join(all_flows),
+                    "env": last_env_obs,
+                    "score": reward_score
+                })
+                st.rerun()
 
 with tab_metrics:
     st.markdown("### 📈 Reinforcement Learning Benchmarks")
