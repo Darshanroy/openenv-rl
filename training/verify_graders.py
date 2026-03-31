@@ -65,14 +65,30 @@ def verify_graders():
                 score_perf = res_perf.info.get("grader_score", -999.0)
                 break
                 
+        # Test 3: Partial Trajectory (To prove fine-grained decimal scoring like 0.1)
+        res_part = client.reset(task_id=tid)
+        score_part = 0.0
+        res_part = client.step(Action(message="[respond('I am offering a partial response without checking the database.')]"))
+        if res_part.done:
+            score_part = res_part.info.get("grader_score", -999.0)
+        else:
+            # Force finish
+            for _ in range(10):
+                res_part = client.step(Action(message="[invalid_tool()]"))
+                if res_part.done: 
+                    score_part = res_part.info.get("grader_score", -999.0)
+                    break
+                
         # Assertions
         is_valid_fail = 0.0 <= score_fail <= 1.0
         is_valid_perf = 0.0 <= score_perf <= 1.0
+        is_valid_part = 0.0 <= score_part <= 1.0
         
         print(f"  [Failure Test] Score: {score_fail:.2f} | Bounded [0,1]: {'PASS' if is_valid_fail else 'FAIL'}")
+        print(f"  [Partial Test] Score: {score_part:.2f} | Bounded [0,1]: {'PASS' if is_valid_part else 'FAIL'} (Checks partial decimal values)")
         print(f"  [Perfect Test] Score: {score_perf:.2f} | Bounded [0,1]: {'PASS' if is_valid_perf else 'FAIL'}")
         
-        if not is_valid_fail or not is_valid_perf:
+        if not is_valid_fail or not is_valid_perf or not is_valid_part:
             all_passed = False
             
     print("\n" + "="*80)
