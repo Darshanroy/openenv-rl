@@ -1,0 +1,22 @@
+[project]
+name = "openev-csa"
+version = "0.1.0"
+description = "Customer Support Agent for OpenEnv"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "torch",
+    "transformers",
+    "datasets",
+    "accelerate",
+    "huggingface_hub",
+    "streamlit",
+    "python-multipart",
+    "pandas",
+    "openai",
+    "openenv-core"
+]
+
+[project.scripts]
+serve = "my_env.server.app:main"

@@ -15,9 +15,15 @@ until curl -s http://localhost:8000/health > /dev/null; do
 done
 echo "✅ API Server is up!"
 
-# Start the Streamlit Dashboard (Main HF UI)
-echo "🚀 Starting Streamlit Dashboard on port 7860..."
-streamlit run app.py --server.port=7860 --server.address=0.0.0.0
+# Start the Streamlit Dashboard (Internal Port 8501)
+echo "🚀 Starting Streamlit Dashboard on port 8501..."
+streamlit run app.py &
+STREAMLIT_PID=$!
+
+# Start NGINX Reverse Proxy (Public Port 7860)
+echo "🚀 Starting NGINX Reverse Proxy..."
+# Disable daemonizing so NGINX runs in the foreground, keeping the container alive
+nginx -g "daemon off;"
 
 # Cleanup on exit
-trap "kill $SERVER_PID" EXIT
+trap "kill $SERVER_PID; kill $STREAMLIT_PID" EXIT

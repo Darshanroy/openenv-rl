@@ -39,6 +39,12 @@ app = create_app(
 
 # ── Custom session-based routes (for Streamlit dashboard) ────────────────────
 
+@app.get("/health")
+def health():
+    """Liveness probe for the OpenEnv validator."""
+    return {"status": "ok", "env": "CustomerSupport-v1"}
+
+
 @app.post("/session/reset")
 def session_reset(req: SessionRequest):
     """Start a new session-based episode for the dashboard."""

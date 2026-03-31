@@ -1,39 +1,34 @@
-# Use high-performance Python base image
-FROM python:3.11-slim
+# --- Production Stage ---
+FROM python:3.10-slim
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app \
-    STREAMLIT_SERVER_PORT=7860 \
-    STREAMLIT_SERVER_ADDRESS=0.0.0.0
+WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    git \
     curl \
-    build-essential \
+    git \
+    nginx \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
-WORKDIR /app
-
-# Copy requirements and install
+# Install python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application code
+# Copy Nginx configuration
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# Copy application code
 COPY . .
 
-# Ensure startup scripts are executable
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV STREAMLIT_SERVER_PORT=8501
+ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
+ENV STREAMLIT_SERVER_HEADLESS=true
+
+# Expose ONLY the public Hugging Face port (7860) where Nginx listens
+EXPOSE 7860
+
+# Entrypoint script starts both API and UI
 RUN chmod +x run_app.sh
-
-# Expose ports for UI (7860) and API (8000)
-EXPOSE 7860 8000
-
-# Healthcheck for the OpenEnv API
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
-
-# Start the multi-process application
 CMD ["./run_app.sh"]
