@@ -1,6 +1,7 @@
 """
 OpenEnv-compliant client for the Customer Support Environment.
-Wraps the REST/WebSocket API exposed by the server.
+Uses session-based routes (/session/reset, /session/step, /session/state)
+for stateful multi-turn conversations with the dashboard.
 """
 import requests
 import uuid
@@ -11,7 +12,7 @@ from .models import SupportAction, SupportObservation, SupportState
 
 class SupportEnvClient:
     """
-    Client connector bridging the RL training loop
+    Client connector bridging the RL training loop / Streamlit dashboard
     with the OpenEnv Environment server.
     """
     def __init__(self, base_url: str = "http://127.0.0.1:8000"):
@@ -26,7 +27,7 @@ class SupportEnvClient:
         if task_id:
             payload["task_id"] = task_id
 
-        response = requests.post(f"{self.base_url}/reset", json=payload)
+        response = requests.post(f"{self.base_url}/session/reset", json=payload)
         response.raise_for_status()
         return SupportObservation(**response.json())
 
@@ -36,7 +37,7 @@ class SupportEnvClient:
             raise RuntimeError("Must call reset() before step()")
 
         response = requests.post(
-            f"{self.base_url}/step/{self.session_id}",
+            f"{self.base_url}/session/step/{self.session_id}",
             json=action.model_dump(),
         )
         response.raise_for_status()
@@ -46,7 +47,7 @@ class SupportEnvClient:
         """Retrieve the current episode state."""
         if not self.session_id:
             raise RuntimeError("Must call reset() before get_state()")
-        response = requests.get(f"{self.base_url}/state/{self.session_id}")
+        response = requests.get(f"{self.base_url}/session/state/{self.session_id}")
         response.raise_for_status()
         return SupportState(**response.json())
 
