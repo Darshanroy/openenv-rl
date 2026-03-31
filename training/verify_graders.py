@@ -8,7 +8,8 @@ import os
 import requests
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from my_env.client import SupportEnvClient, Action
+from my_env.client import SupportEnvClient
+from my_env.models import SupportAction
 from training.config import ENV_SERVER_URL
 
 SCENARIOS = [
@@ -51,32 +52,32 @@ def verify_graders():
         res_fail = client.reset(task_id=tid)
         # Extensively loop garbage turns to force an episode end via max_turns (set to 8 in Env)
         for _ in range(10):
-            res_fail = client.step(Action(message="[invalid_tool()]"))
+            res_fail = client.step(SupportAction(message="[invalid_tool()]"))
             if res_fail.done: break
         
-        score_fail = res_fail.info.get("grader_score", -999.0)
+        score_fail = res_fail.metadata.get("grader_score", -999.0)
         
         # Test 2: Perfect Trajectory
         res_perf = client.reset(task_id=tid)
         score_perf = 0.0
         for move in PERFECT_MOVES[tid]:
-            res_perf = client.step(Action(message=move))
+            res_perf = client.step(SupportAction(message=move))
             if res_perf.done:
-                score_perf = res_perf.info.get("grader_score", -999.0)
+                score_perf = res_perf.metadata.get("grader_score", -999.0)
                 break
                 
         # Test 3: Partial Trajectory (To prove fine-grained decimal scoring like 0.1)
         res_part = client.reset(task_id=tid)
         score_part = 0.0
-        res_part = client.step(Action(message="[respond('I am offering a partial response without checking the database.')]"))
+        res_part = client.step(SupportAction(message="[respond('I am offering a partial response without checking the database.')]"))
         if res_part.done:
-            score_part = res_part.info.get("grader_score", -999.0)
+            score_part = res_part.metadata.get("grader_score", -999.0)
         else:
             # Force finish
             for _ in range(10):
-                res_part = client.step(Action(message="[invalid_tool()]"))
+                res_part = client.step(SupportAction(message="[invalid_tool()]"))
                 if res_part.done: 
-                    score_part = res_part.info.get("grader_score", -999.0)
+                    score_part = res_part.metadata.get("grader_score", -999.0)
                     break
                 
         # Assertions

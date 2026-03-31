@@ -10,7 +10,8 @@ import time
 
 # Ensure local imports work
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from my_env.client import SupportEnvClient, Action
+from my_env.client import SupportEnvClient
+from my_env.models import SupportAction
 from training.inference import run_benchmark
 from training.config import METRICS_FILE, ENV_SERVER_URL
 from agents.orchestrator import Orchestrator
@@ -212,11 +213,11 @@ with tab_chat:
                 
                 # Env step
                 status.update(label=f"Executing Tool: {action}")
-                res = client.step(Action(message=action))
+                res = client.step(SupportAction(message=action))
                 obs_text = ""
-                if res.observation and res.observation.messages:
-                    last_msg = res.observation.messages[-1]
-                    obs_text = last_msg.content
+                if res.messages:
+                    last_msg = res.messages[-1]
+                    obs_text = last_msg["content"]
 
                 status.update(label="Supervisor generated final output", state="complete")
 
@@ -228,7 +229,7 @@ with tab_chat:
                 st.info(f"📡 Environment Data Sync:\n\n{obs_text}")
                 
             if res.done:
-                score = res.info.get("grader_score", 0.0)
+                score = res.metadata.get("grader_score", 0.0)
                 st.success(f"✅ **Task Ended** — Final Grader Score: **{score:.2f}**")
             
             # Save to state

@@ -19,7 +19,8 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from openai import OpenAI
-from my_env.client import SupportEnvClient, Action
+from my_env.client import SupportEnvClient
+from my_env.models import SupportAction
 
 # Configuration
 ENV_URL = os.environ.get("ENV_SERVER_URL", "http://127.0.0.1:8000")
@@ -91,9 +92,9 @@ def run_baseline():
 
             # Add the customer's initial message
             customer_msg = ""
-            for m in env_result.observation.messages:
-                if m.category == "CUSTOMER":
-                    customer_msg = m.content
+            for m in env_result.messages:
+                if m["role"] == "customer":
+                    customer_msg = m["content"]
             messages.append({"role": "user", "content": f"Customer: {customer_msg}"})
 
             grader_score = 0.0
@@ -116,18 +117,18 @@ def run_baseline():
                 turn_count += 1
 
                 # Step the environment
-                env_result = env_client.step(Action(message=agent_action))
+                env_result = env_client.step(SupportAction(message=agent_action))
 
                 # Get feedback and add to conversation
                 feedback = ""
-                for m in env_result.observation.messages:
-                    if m.category == "FEEDBACK":
-                        feedback = m.content
+                for m in env_result.messages:
+                    if m["role"] == "system":
+                        feedback = m["content"]
                 if feedback:
                     messages.append({"role": "user", "content": f"Environment: {feedback}"})
 
                 if env_result.done:
-                    grader_score = env_result.info.get("grader_score", 0.0)
+                    grader_score = env_result.metadata.get("grader_score", 0.0)
 
             results[task_id] = {
                 "score": grader_score,

@@ -7,7 +7,8 @@ import torch
 # Ensure imports work regardless of local execution path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from my_env.client import SupportEnvClient, Action
+from my_env.client import SupportEnvClient
+from my_env.models import SupportAction
 from training.config import ENV_SERVER_URL, METRICS_FILE, LOG_DIR
 from agents.orchestrator import Orchestrator
 
@@ -140,13 +141,13 @@ def run_benchmark(orchestrator=None, save_to_csv=True):
                     history_lines.append(f"Customer: {customer_msg}" if turn == 0 else f"Agent: {action}")
                     
                     # Environment step
-                    res = client.step(Action(message=action))
-                    if res.observation and res.observation.messages:
-                        obs_text = res.observation.messages[-1].content
+                    res = client.step(SupportAction(message=action))
+                    if res.messages:
+                        obs_text = res.messages[-1]["content"]
                         history_lines.append(f"Environment: {obs_text}")
                     
                     if res.done:
-                        grader_score = res.info.get("grader_score", 0.0)
+                        grader_score = res.metadata.get("grader_score", 0.0)
                         break
 
                 variation_scores.append(grader_score)

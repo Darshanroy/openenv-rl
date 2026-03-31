@@ -4,7 +4,8 @@ import re
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import List, Dict
-from my_env.client import SupportEnvClient, Action
+from my_env.client import SupportEnvClient
+from my_env.models import SupportAction as Action
 
 try:
     from trl.experimental.openenv import generate_rollout_completions
