@@ -33,7 +33,7 @@ app = create_app(
     action_cls=SupportAction,
     observation_cls=SupportObservation,
     env_name="CustomerSupport-v1",
-    max_concurrent_envs=64,
+    max_concurrent_envs=128,  # supporting hyper-parallel GRPO/rollout batches
 )
 
 

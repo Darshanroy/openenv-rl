@@ -326,6 +326,32 @@ class SupportEnvironment(Environment):
             return None, [], {}, str(e)
 
     def _calculate_grader_score(self) -> float:
+        """
+        Calculate weighted score (0.0 to 1.0) with PROTOCOL ENFORCEMENT.
+        Conditional triggers ensure agents don't 'guess' their way to a solve.
+        """
         weights = self._scenario.get("grader_weights", {})
-        score = sum(w for tool, w in weights.items() if tool in self._tools_used)
+        used = self._tools_used
+        score = 0.0
+
+        # Protocols: Define required tool sequences
+        protocols = {
+            "hard_damaged": ("ask_proof", "initiate_refund"),
+            "hard_missing": ("investigate_missing", "escalate_to_human"),
+            "medium_return": ("validate_return", "create_return_request"),
+            "hard_refund": ("validate_return", "initiate_refund")
+        }
+
+        # Check for blocked tools
+        blocked_tools = set()
+        if self._task_id in protocols:
+            prereq, main_tool = protocols[self._task_id]
+            if main_tool in used and prereq not in used:
+                blocked_tools.add(main_tool)
+
+        # sum weights for allowed tools
+        for tool, weight in weights.items():
+            if tool in used and tool not in blocked_tools:
+                score += weight
+        
         return min(float(score), 1.0)
