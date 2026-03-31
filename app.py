@@ -216,9 +216,15 @@ with tab_chat:
         with st.chat_message("assistant", avatar="🤖"):
             with st.status(f"Pipeline active. Routing intent...", expanded=True) as status:
                 
-                # Build context
-                history_text = "\n".join([f"{'Customer' if x['role']=='user' else 'Agent'}: {x['content']}" 
-                                          for x in st.session_state.messages])
+                # Build context (User, Assistant, and Environment feedback)
+                history_items = []
+                for x in st.session_state.messages:
+                    role_label = "Customer" if x['role'] == "user" else "Agent"
+                    history_items.append(f"{role_label}: {x['content']}")
+                    if x.get("env"):
+                        history_items.append(f"Environment: {x['env']}")
+                
+                history_text = "\n".join(history_items)
                 
                 # multi-agent processing
                 status.update(label="Running Router & Specialist...")
