@@ -68,7 +68,7 @@ The agent uses these APIs to interact with the database:
 theme = gr.themes.Soft(
     primary_hue="blue",
     secondary_hue="indigo",
-    font=[gr.fonts.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
+    font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
 ).set(
     body_background_fill="*neutral_50",
     block_background_fill="*neutral_100",
