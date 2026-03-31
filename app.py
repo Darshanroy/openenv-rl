@@ -128,7 +128,7 @@ def chat_step(message, history, task_id):
     return history + [[message, response]], ""
 
 # --- UI APP ---
-with gr.Blocks(theme=theme, title="OpenEnv CSA Dashboard") as demo:
+with gr.Blocks() as demo:
     gr.Markdown("# 🤖 OpenEnv CSA Dashboard")
     gr.Markdown("Interact with our RL-trained Customer Support Agent and track performance stats.")
     
@@ -167,7 +167,7 @@ with gr.Blocks(theme=theme, title="OpenEnv CSA Dashboard") as demo:
         with gr.Column(scale=3):
             with gr.Tabs():
                 with gr.Tab("💬 Agent Conversation"):
-                    chatbot = gr.Chatbot(label="Simulated Chat Session", height=450, bubble_full_width=False)
+                    chatbot = gr.Chatbot(label="Simulated Chat Session", height=450)
                     with gr.Row():
                         msg_input = gr.Textbox(
                             placeholder="Type your message here...", 
@@ -216,4 +216,4 @@ with gr.Blocks(theme=theme, title="OpenEnv CSA Dashboard") as demo:
     demo.load(update_ui, outputs=[plot, leaderboard_table, accuracy_text])
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+    demo.launch(server_name="0.0.0.0", server_port=7860, theme=theme, title="OpenEnv CSA Dashboard")
