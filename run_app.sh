@@ -7,6 +7,6 @@ export PYTHONPATH=$PYTHONPATH:.
 echo "Starting OpenEnv API Server..."
 uvicorn my_env.server.app:app --host 0.0.0.0 --port 8000 &
 
-# Start the main Gradio application in the foreground
-echo "Starting Gradio UI..."
-python app.py
+# Start the main Streamlit application in the foreground
+echo "Starting Streamlit UI component..."
+python -m streamlit run app.py --server.port=7860 --server.address=0.0.0.0

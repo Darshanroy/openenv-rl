@@ -1,10 +1,11 @@
-import gradio as gr
+import streamlit as st
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import os
 import sys
 import requests
 import pandas as pd
+import time
 
 # Ensure local imports work
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -17,216 +18,188 @@ from agents.orchestrator import Orchestrator
 MODEL_NAME = "Qwen/Qwen2.5-1.5B"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# ── Scenario → Sample Messages ────────────────────────────────────────────
 SAMPLE_PROMPTS = {
     "easy_status": ["Where is my order ORD-101?", "When will ORD-101 arrive?", "Status of my latest order?"],
-    "easy_payment_fail": ["My payment for ORD-1414 failed.", "Why did my transaction for ORD-1414 not go through?", "Help with payment failure."],
-    "easy_coupon": ["I have a coupon SAVE10 but it's not working.", "Apply SAVE10 to my cart please.", "Validating SAVE10 coupon."],
-    "easy_account": ["I forgot my password for meera.reddy@example.com.", "Reset my account password.", "Login issues with my meera email."],
-    "medium_delay": ["My order ORD-909 is late.", "When will ORD-909 get here? It's delayed.", "Check delay on ORD-909."],
-    "easy_cancel": ["Cancel my order ORD-505 immediately.", "I don't want ORD-505 anymore.", "Stop the delivery for ORD-505."],
-    "medium_address": ["Change my address for ORD-1919 to '789 New Street'.", "Update delivery location for ORD-1919.", "Wrong address for ORD-1919."],
-    "medium_reschedule": ["Can we reschedule ORD-2323?", "I won't be home for ORD-2323, change time.", "Change delivery date for ORD-2323."],
-    "medium_return": ["I want to return ORD-2020.", "The items in ORD-2020 are wrong, I want a return.", "Requesting return for ORD-2020."],
-    "medium_double_charge": ["I was charged twice for ORD-1515.", "Refund the second charge on ORD-1515.", "Double payment for ORD-1515."],
-    "hard_refund": ["I need a full refund for ORD-2121.", "Give me my money back for ORD-2121.", "I want to refund ORD-2121."],
-    "hard_damaged": ["My order ORD-2222 is damaged.", "ORD-2222 arrived broken in pieces.", "The box for ORD-2222 was crushed."],
-    "hard_missing": ["My order ORD-1313 shows as delivered but it's not here.", "Missing items from ORD-1313.", "Where is ORD-1313? I checked everywhere."],
-    "hard_angry": ["I'm EXTREMELY angry! ORD-909 is still missing!", "This is terrible service for ORD-909!", "Worst experience ever with ORD-909!"],
-    "hard_escalation": ["I want to speak to your manager about ORD-1414.", "Escalate my case for ORD-1414.", "Connect me to a supervisor."]
+    "easy_payment_fail": ["My payment for ORD-1414 failed.", "Why did my transaction for ORD-1414 not go through?"],
+    "easy_coupon": ["I have a coupon SAVE10 but it's not working.", "Apply SAVE10 to my cart please."],
+    "easy_account": ["I forgot my password for meera.reddy@example.com.", "Reset my account password."],
+    "medium_delay": ["My order ORD-909 is late.", "Check delay on ORD-909."],
+    "easy_cancel": ["Cancel my order ORD-505 immediately.", "I don't want ORD-505 anymore."],
+    "medium_address": ["Change my address for ORD-1919 to '789 New Street'.", "Wrong address for ORD-1919."],
+    "medium_reschedule": ["Can we reschedule ORD-2323?", "Change delivery date for ORD-2323."],
+    "medium_return": ["I want to return ORD-2020.", "Requesting return for ORD-2020."],
+    "medium_double_charge": ["I was charged twice for ORD-1515.", "Refund the second charge on ORD-1515."],
+    "hard_refund": ["I need a full refund for ORD-2121.", "I want to refund ORD-2121."],
+    "hard_damaged": ["My order ORD-2222 is damaged.", "The box for ORD-2222 was crushed."],
+    "hard_missing": ["My order ORD-1313 shows as delivered but it's not here.", "Missing items from ORD-1313."],
+    "hard_angry": ["I'm EXTREMELY angry! ORD-909 is still missing!", "This is terrible service for ORD-909!"],
+    "hard_escalation": ["I want to speak to your manager about ORD-1414.", "Connect me to a supervisor."]
 }
 SCENARIOS = list(SAMPLE_PROMPTS.keys())
 
-TOOL_CATALOG_MD = """
-### 🛠️ Agent Tool Catalog
+# ── Setup Caching & State ────────────────────────────────────────────────
+st.set_page_config(page_title="OpenEnv CSA Dashboard", page_icon="🤖", layout="wide")
 
-**📦 Order Agent Tools**
-- `get_order(id)` — Order details
-- `cancel_order(id)` — Cancel pending orders
-- `validate_coupon(code)` — Apply discounts
-- `reset_password(email)` — Account recovery
+@st.cache_resource(show_spinner="Loading Model weights to GPU... This takes a minute.")
+def load_system():
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto"
+    )
+    orch = Orchestrator(model, tokenizer, DEVICE)
+    client = SupportEnvClient(base_url=ENV_SERVER_URL)
+    return orch, client
 
-**🚚 Logistics Agent Tools**
-- `track_shipment(id)` — Live tracking
-- `update_address(id, addr)` — Change destination
-- `check_delivery_slot(id)` — Available slots
-- `reschedule_delivery(id, slot)` — Reschedule
-- `investigate_missing(id)` — Missing item case
-
-**💰 Finance Agent Tools**
-- `validate_return(id)` — Return eligibility
-- `ask_proof(id)` — Request damage evidence
-- `create_return_request(id)` — Create return
-- `initiate_refund(id)` — Reverse payment
-
-**👨‍💼 Supervisor Tools**
-- `escalate_to_human(reason)` — Human handover
-- `respond(msg)` — Final customer response
-"""
-
-RULES_MD = """
-**Rule 1 — Multi-Agent Pipeline**
-Every request flows: 🧭 Router → Specialist → 👨‍💼 Supervisor
-
-**Rule 2 — Tool-Call Format**
-Agents use brackets: `[tool_name('param')]`
-
-**Rule 3 — Turn Limit**
-Max **6 turns** per interaction.
-
-**Rule 4 — Escalation**
-Angry/security issues bypass specialists → Supervisor direct.
-
-**Rule 5 — Restricted Tools**
-Each specialist can ONLY use its own tool set.
-"""
-
-# ── Load Model & Create Multi-Agent System ─────────────────────────────────
-print(f"Loading {MODEL_NAME}...")
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
-    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-    device_map="auto"
-)
-
-print("Initializing Multi-Agent Orchestrator...")
-orchestrator = Orchestrator(model, tokenizer, DEVICE)
-client = SupportEnvClient(base_url=ENV_SERVER_URL)
-
-# ── Helpers ────────────────────────────────────────────────────────────────
 def wait_for_server(url):
     try: return requests.get(f"{url}/health").status_code == 200
     except: return False
 
-def get_leaderboard_data():
-    if os.path.exists(METRICS_FILE):
-        df = pd.read_csv(METRICS_FILE)
-        chart_df = df[df["Scenario"] != "GLOBAL_AVERAGE"].copy()
-        avg_row = df[df["Scenario"] == "GLOBAL_AVERAGE"]
-        avg_score = avg_row["Score"].values[0] if not avg_row.empty else 0.0
-        return chart_df, chart_df, f"### Current Master Table Accuracy: **{avg_score*100:.1f}%**"
-    empty = pd.DataFrame(columns=["Scenario", "Score"])
-    return empty, empty, "### No benchmark data yet — click **Run Full Benchmark** to start."
+orchestrator, client = load_system()
 
-def trigger_benchmark():
-    run_benchmark(save_to_csv=True)
-    return get_leaderboard_data()
+# Session State Initialization
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "scores" not in st.session_state:
+    st.session_state.scores = None
 
-def update_samples(task_id):
-    samples = SAMPLE_PROMPTS.get(task_id, ["Hello"])
-    return gr.Dropdown(choices=samples, value=samples[0])
+def reset_chat(task_id):
+    st.session_state.messages = []
+    st.session_state.scores = None
+    if wait_for_server(ENV_SERVER_URL):
+        try:
+            client.reset(task_id=task_id)
+        except Exception as e:
+            st.error(f"Environment reset failed: {e}")
 
-def chat_step(message, history, task_id):
-    """Process one turn through the multi-agent pipeline."""
-    if not message or not message.strip():
-        return history, "", ""
-    if not wait_for_server(ENV_SERVER_URL):
-        history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": "⚠️ Environment server is not responding."})
-        return history, "", "⚠️ Server offline"
+# ── Sidebar Configuration ──
+with st.sidebar:
+    st.title("⚙️ Mission Control")
+    st.markdown("Guide the multi-agent system through 15 e-commerce scenarios.")
+    
+    selected_task = st.selectbox("1. Select Task Tier", options=SCENARIOS, 
+                                 help="Choose the difficulty and scenario you want to test.")
+    
+    st.markdown("### Suggested Openers")
+    for prompt in SAMPLE_PROMPTS.get(selected_task, []):
+        st.code(prompt, language=None)
+        
+    if st.button("♻️ Reset Environment & Clear Chat", use_container_width=True):
+        reset_chat(selected_task)
+        st.rerun()
 
-    # Reset environment on first message
-    if len(history) == 0:
-        client.reset(task_id=task_id)
+    with st.expander("📖 Agent Protocol Rules"):
+        st.markdown("""
+        **1. Strict Routing**: Requests always pass from Router → Specialist → Supervisor.
+        **2. Tool Constraints**: Specialists can only use their restricted toolset (e.g. Finance cannot cancel orders).
+        **3. Supervisor Override**: Abusive inputs or manager requests bypass specialists completely.
+        **4. Turn Limits**: The environment caps episodes at 6 turns.
+        """)
 
-    # Build history text for context
-    history_lines = []
-    for h in history:
-        if h.get("role") == "user":
-            history_lines.append(f"Customer: {h['content']}")
-        elif h.get("role") == "assistant":
-            history_lines.append(f"Agent: {h['content']}")
-    history_text = "\n".join(history_lines)
+# ── Main Content Area ──
+st.title("🤖 OpenEnv Multi-Agent Dashboard")
+st.markdown("Watch the pipeline dynamically route intents, execute tools, and finalize responses.")
 
-    # Run through the multi-agent orchestrator
-    action, trace = orchestrator.process(
-        customer_message=message,
-        observation_text=f"Customer says: {message}",
-        task_id=task_id,
-        history_text=history_text
-    )
+tab_chat, tab_metrics = st.tabs(["💬 Live Testing & Flow", "📊 Benchmark Leaderboard"])
 
-    # Execute the action in the environment
-    res = client.step(Action(message=action))
-    obs_text = ""
-    if res.observation and res.observation.messages:
-        last_msg = res.observation.messages[-1]
-        obs_text = last_msg.content
+with tab_chat:
+    
+    # Render Chat History
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "🤖"):
+            st.markdown(msg["content"])
+            if "trace" in msg and msg["trace"]:
+                with st.expander(f"🔍 Agent Pipeline Activity: {msg['agent_flow']}"):
+                    st.markdown(msg["trace"])
+            if "env" in msg and msg["env"]:
+                st.info(f"📡 Environment Database:\n\n{msg['env']}")
 
-    # Build the display response
-    agent_flow = trace.flow()
-    display_response = f"**{agent_flow}**\n\n"
+    # Handle incoming messages
+    if user_input := st.chat_input("Type your message here..."):
+        if not wait_for_server(ENV_SERVER_URL):
+            st.error("⚠️ Environment API server is offline. Please start it using uvicorn.")
+            st.stop()
+            
+        # First message handler (if user didn't click reset)
+        if len(st.session_state.messages) == 0:
+            reset_chat(selected_task)
+        
+        # Display User Message
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(user_input)
 
-    if obs_text:
-        display_response += f"📡 Environment: {obs_text}\n\n"
-    display_response += f"🤖 Action: `{action}`"
+        # Agent Processing Turn
+        with st.chat_message("assistant", avatar="🤖"):
+            with st.status(f"Pipeline active. Routing intent...", expanded=True) as status:
+                
+                # Build context
+                history_text = "\n".join([f"{'Customer' if x['role']=='user' else 'Agent'}: {x['content']}" 
+                                          for x in st.session_state.messages])
+                
+                # multi-agent processing
+                status.update(label="Running Router & Specialist...")
+                action, trace = orchestrator.process(
+                    customer_message=user_input,
+                    observation_text=f"Customer says: {user_input}",
+                    task_id=selected_task,
+                    history_text=history_text
+                )
+                
+                # Env step
+                status.update(label=f"Executing Tool: {action}")
+                res = client.step(Action(message=action))
+                obs_text = ""
+                if res.observation and res.observation.messages:
+                    last_msg = res.observation.messages[-1]
+                    obs_text = last_msg.content
 
-    if res.done:
-        score = res.info.get("grader_score", 0.0)
-        display_response += f"\n\n✅ **Task Complete** — Grader Score: **{score:.2f}**"
+                status.update(label="Supervisor generated final output", state="complete")
 
-    history.append({"role": "user", "content": message})
-    history.append({"role": "assistant", "content": display_response})
-    trace_md = trace.summary()
+            # Result Rendering
+            flow_line = trace.flow()
+            st.markdown(f"**Final Agent Output:**\n`{action}`")
+            
+            if obs_text:
+                st.info(f"📡 Environment Data Sync:\n\n{obs_text}")
+                
+            if res.done:
+                score = res.info.get("grader_score", 0.0)
+                st.success(f"✅ **Task Ended** — Final Grader Score: **{score:.2f}**")
+            
+            # Save to state
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": f"**Final Action:** `{action}`", 
+                "trace": trace.summary(),
+                "agent_flow": flow_line,
+                "env": obs_text if obs_text else None
+            })
+            st.rerun()
 
-    return history, "", trace_md
-
-
-# ── Gradio UI ──────────────────────────────────────────────────────────────
-with gr.Blocks(theme=gr.themes.Soft(primary_hue="blue", secondary_hue="indigo"), title="OpenEnv CSA Dashboard") as demo:
-    gr.Markdown("# 🤖 OpenEnv CSA — Multi-Agent Dashboard")
-    gr.Markdown("A multi-agent RL system: **Router → Specialist → Supervisor** pipeline for e-commerce support.")
-
-    with gr.Row():
-        # ── LEFT SIDEBAR ──
-        with gr.Column(scale=1, min_width=280):
-            gr.Markdown("### ⚙️ Controls")
-            task_selector = gr.Dropdown(choices=SCENARIOS, label="1. Active Scenario", value="easy_status")
-            reset_btn = gr.Button("♻️ Reset Environment", variant="secondary")
-
-            gr.Markdown("---")
-            sample_selector = gr.Dropdown(choices=SAMPLE_PROMPTS["easy_status"], label="2. Sample Prompts", value=SAMPLE_PROMPTS["easy_status"][0])
-            use_sample_btn = gr.Button("✨ Apply Sample", variant="secondary")
-
-            with gr.Accordion("📜 Rules of the Agent", open=False):
-                gr.Markdown(RULES_MD)
-            with gr.Accordion("🛠️ Tool Catalog", open=False):
-                gr.Markdown(TOOL_CATALOG_MD)
-
-        # ── MAIN PANEL ──
-        with gr.Column(scale=3):
-            with gr.Tabs():
-                with gr.Tab("💬 Agent Conversation"):
-                    chatbot = gr.Chatbot(label="Multi-Agent Chat", height=400)
-                    with gr.Row():
-                        msg_input = gr.Textbox(placeholder="Type message…", label="Your Input", scale=4)
-                        submit_btn = gr.Button("Send", variant="primary", scale=1)
-                    clear_btn = gr.Button("🗑️ Clear Chat")
-
-                    gr.Markdown("### 🔍 Agent Trace")
-                    trace_display = gr.Markdown("_Send a message to see the agent pipeline in action._")
-
-                with gr.Tab("📊 Performance Metrics"):
-                    accuracy_text = gr.Markdown("### Loading stats…")
-                    with gr.Row():
-                        refresh_btn = gr.Button("🔄 Refresh Stats")
-                        run_btn = gr.Button("🚀 Run Full Benchmark", variant="primary")
-                    plot = gr.BarPlot(x="Scenario", y="Score", title="Master Table Success Rate", y_lim=[0, 1], height=400, color="Scenario")
-                    leaderboard_table = gr.DataFrame()
-
-    # ── Events ──
-    task_selector.change(update_samples, inputs=[task_selector], outputs=[sample_selector])
-    use_sample_btn.click(lambda s: s, inputs=[sample_selector], outputs=[msg_input])
-    submit_btn.click(chat_step, [msg_input, chatbot, task_selector], [chatbot, msg_input, trace_display])
-    msg_input.submit(chat_step, [msg_input, chatbot, task_selector], [chatbot, msg_input, trace_display])
-    reset_btn.click(lambda: ([], "", "_Send a message to see the agent pipeline._"), outputs=[chatbot, msg_input, trace_display])
-    clear_btn.click(lambda: ([], "", "_Send a message to see the agent pipeline._"), outputs=[chatbot, msg_input, trace_display])
-    refresh_btn.click(get_leaderboard_data, outputs=[plot, leaderboard_table, accuracy_text])
-    run_btn.click(trigger_benchmark, outputs=[plot, leaderboard_table, accuracy_text])
-    demo.load(get_leaderboard_data, outputs=[plot, leaderboard_table, accuracy_text])
-
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860)
+with tab_metrics:
+    st.markdown("### 📈 Reinforcement Learning Benchmarks")
+    col1, col2 = st.columns([1, 4])
+    
+    with col1:
+        if st.button("🚀 Run Full 15-Task Eval", use_container_width=True):
+            with st.spinner("Running Hardcoded Assessment..."):
+                run_benchmark(save_to_csv=True)
+                st.rerun()
+                
+    with col2:
+        if os.path.exists(METRICS_FILE):
+            df = pd.read_csv(METRICS_FILE)
+            avg_row = df[df["Scenario"] == "GLOBAL_AVERAGE"]
+            if not avg_row.empty:
+                st.metric(label="Global Average Accuracy", value=f"{avg_row['Score'].values[0]*100:.1f}%")
+            
+            chart_df = df[df["Scenario"] != "GLOBAL_AVERAGE"].copy()
+            if not chart_df.empty:
+                st.bar_chart(data=chart_df, x="Scenario", y="Score", use_container_width=True)
+                st.dataframe(chart_df, use_container_width=True)
+        else:
+            st.info("No leaderboard data found. Click 'Run Full 15-Task Eval' to generate the baseline metrics.")
