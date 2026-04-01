@@ -59,6 +59,18 @@ Execute the multi-agent inference script to run the 8-task verification set:
 python inference.py
 ```
 
+## 🌐 Environment API Specification
+
+The Hugging Face Space provides a session-based REST API for high-performance agent interaction and RL training.
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/health` | `GET` | Liveness probe (OpenEnv Validator) |
+| `/session/reset` | `POST` | Initialize a session with `session_id` and `task_id` |
+| `/session/step/{id}` | `POST` | Execute a tool call/action for a specific session |
+| `/session/state/{id}` | `GET` | Retrieve the current full state of the environment |
+| `/session/feedback/{id}`| `POST` | Log RLHF feedback (`thumbs_up`/`thumbs_down`) |
+
 ## ✅ Validation Status
 
 This project is officially **OpenEnv-compliant** and passes 3/3 validator checks:
@@ -68,4 +80,5 @@ This project is officially **OpenEnv-compliant** and passes 3/3 validator checks
 
 ---
 **Author**: Darshankumarr03  
+**Version**: 2.1.0  
 **License**: MIT
