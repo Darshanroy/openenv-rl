@@ -6,7 +6,7 @@ description: >
   shipment tracking, returns, refunds, escalation) to resolve customer issues
   within a turn limit. Designed for training and evaluating RL agents via GRPO.
 version: "2.0.0"
-entry_point: "my_env.server.my_environment:SupportEnvironment"
+entry_point: "server.my_environment:SupportEnvironment"
 
 action_space:
   type: "text"
