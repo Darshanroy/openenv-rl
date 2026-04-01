@@ -1,3 +1,12 @@
+---
+title: OpenEnv-CSA-RL
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # OpenEnv Customer Support Agent (CSA) RL
 
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-green)](https://github.com/openenv/openenv)
