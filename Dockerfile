@@ -1,4 +1,5 @@
-# --- Production Stage ---
+# --- Standalone OpenEnv CSA Environment API ---
+# Deploy to: Darshankumarr03/openenv-csa-rl
 FROM python:3.10-slim
 
 WORKDIR /app
@@ -6,29 +7,23 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
-    git \
-    nginx \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy Nginx configuration
-COPY nginx.conf /etc/nginx/nginx.conf
-
-# Copy application code
-COPY . .
+# Copy only environment-related code
+COPY my_env ./my_env
+COPY openenv.yaml .
+COPY pyproject.toml .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV STREAMLIT_SERVER_PORT=8501
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_SERVER_HEADLESS=true
+ENV PYTHONPATH=/app
 
-# Expose ONLY the public Hugging Face port (7860) where Nginx listens
+# HF Spaces listens on port 7860
 EXPOSE 7860
 
-# Entrypoint script starts both API and UI
-RUN chmod +x run_app.sh
-CMD ["./run_app.sh"]
+# Start the OpenEnv API server on port 7860
+CMD ["uvicorn", "my_env.server.app:app", "--host", "0.0.0.0", "--port", "7860"]

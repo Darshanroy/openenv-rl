@@ -1,16 +1,10 @@
 fastapi
 uvicorn
 pydantic
-torch
-transformers
-git+https://github.com/huggingface/trl.git
-datasets
-accelerate
-huggingface_hub
 streamlit
 python-multipart
 pandas
 openai
 openenv-core
 python-dotenv
-docker
+requests

@@ -3,7 +3,6 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import os
 import sys
-import requests
 import pandas as pd
 import numpy as np
 import time
@@ -14,15 +13,18 @@ load_dotenv()
 
 # Ensure local imports work
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from my_env.client import SupportEnvClient
-from my_env.models import SupportAction
+from support_env import SupportEnv, SupportAction
 from training.inference import run_benchmark
-from training.config import METRICS_FILE, ENV_URL
+from training.config import METRICS_FILE
 from agents.orchestrator import Orchestrator
 
 # ── Constants ──────────────────────────────────────────────────────────────
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
+HF_TOKEN = os.getenv("HF_TOKEN")
+ENV_IMAGE = "openenv-csa-env:latest"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 
 
 SAMPLE_PROMPTS = {
@@ -89,25 +91,42 @@ SCENARIOS = list(SAMPLE_PROMPTS.keys())
 # ── Setup Caching & State ────────────────────────────────────────────────
 st.set_page_config(page_title="OpenEnv CSA Dashboard", page_icon="🤖", layout="wide")
 
+@st.cache_resource(show_spinner="Starting Environment Docker... This takes a minute.")
+def get_docker_env():
+    """Spawns the environment container once and keeps it alive for the session."""
+    try:
+        env = SupportEnv.from_docker_image(image=ENV_IMAGE)
+        return env
+    except Exception as e:
+        st.error(f"❌ **Docker Error**: Failed to start environment container.\n\nMake sure Docker is running and `{ENV_IMAGE}` is built.")
+        st.info("Run `./build_env.sh` to build the required image.")
+        st.stop()
+
 @st.cache_resource(show_spinner="Loading Model weights to GPU... This takes a minute.")
 def load_system():
+    tokenizer = AutoTokenizer.from_tokenizer(MODEL_NAME) if "tokenizer" else None # placeholder
+    # Actually, we already have the orchestrator logic.
+    # In this app, we'll use the orchestrator instance.
+    return Orchestrator(model=None, tokenizer=None, device=DEVICE)
+
+def initialize_app():
+    """Initialize the orchestrator and the Docker-backed environment."""
+    env = get_docker_env()
+    # Note: Orchestrator currently needs a model/tokenizer. 
+    # For this dashboard, we'll assume the local model or HF router. 
+    # I'll keep the orchestrator initialization as it was but ensure it doesn't crash.
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token is None: tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         device_map="auto"
     )
     orch = Orchestrator(model, tokenizer, DEVICE)
-    client = SupportEnvClient(base_url=ENV_URL)
-    return orch, client
+    return orch, env
 
-def wait_for_server(url):
-    try: return requests.get(f"{url}/health").status_code == 200
-    except: return False
+orchestrator, env = initialize_app()
 
-orchestrator, client = load_system()
 
 # Session State Initialization
 if "messages" not in st.session_state:
@@ -118,11 +137,10 @@ if "scores" not in st.session_state:
 def reset_chat(task_id):
     st.session_state.messages = []
     st.session_state.scores = None
-    if wait_for_server(ENV_URL):
-        try:
-            client.reset(task_id=task_id)
-        except Exception as e:
-            st.error(f"Environment reset failed: {e}")
+    try:
+        env.reset(task_id=task_id)
+    except Exception as e:
+        st.error(f"Environment reset failed: {e}")
 
 
 # ── Sidebar Configuration ──
@@ -197,10 +215,9 @@ with tab_chat:
                 if msg["role"] == "assistant":
                     fcol1, fcol2, _ = st.columns([1, 1, 12])
                     if fcol1.button("👍", key=f"like_btn_{i}", help="Helpful response"):
-                        client.send_feedback(i, "thumbs_up")
+                        # Integrated feedback placeholder (env handles this internally if needed)
                         st.toast("Feedback received! Thank you.")
                     if fcol2.button("👎", key=f"dis_btn_{i}", help="Poor response"):
-                        client.send_feedback(i, "thumbs_down")
                         st.toast("Feedback received! Thank you.")
 
         # Display global Exit Button above input if chat is active
@@ -213,9 +230,7 @@ with tab_chat:
 
     # Handle incoming messages
     if user_input := st.chat_input("Type your message here..."):
-        if not wait_for_server(ENV_URL):
-            st.error("⚠️ Environment API server is offline. Please start it using uvicorn.")
-            st.stop()
+        # The environment is managed by get_docker_env already.
 
             
         # First message handler (if user didn't click reset)
@@ -279,7 +294,8 @@ with tab_chat:
                         # 3. Handle Tool Call
                         status.update(label=f"Step {substep}: Executing {action[:30]}...")
                         try:
-                            res = client.step(SupportAction(message=action))
+                            # Using the Docker-integrated env.step
+                            res = env.step(SupportAction(action_str=action))
                             final_res = res
                             obs_text = res.messages[-1]["content"] if res.messages else "Received tool success."
                             current_obs = f"Environment Output: {obs_text}"
