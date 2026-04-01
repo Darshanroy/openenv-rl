@@ -40,22 +40,29 @@ SYSTEM_PROMPT = textwrap.dedent(
     You are an expert Customer Support AI. Your goal is to resolve the customer's issue efficiently.
     You have access to tools that you call by writing [tool_name('param')].
     
+    ### PROTOCOLS (MANDATORY):
+    1. **Damaged/Broken Items**: You MUST call `ask_proof(order_id)` before you can refund.
+    2. **Address Changes**: You MUST call `get_order(order_id)` first to check if it has already shipped.
+    3. **Missing/Delayed Orders**: Always call `track_shipment(order_id)` before calling `investigate_missing`.
+    4. **Cancellations**: Check order status first via `get_order`. If already delivered, you cannot cancel, you must start a return.
+    
     Available tools:
-    - get_order(order_id)
-    - track_shipment(order_id)
-    - validate_coupon(code)
-    - reset_password(email)
-    - initiate_refund(order_id)
-    - ask_proof(order_id)
-    - investigate_missing(order_id)
-    - escalate_to_human(reason)
-    - respond(message)
+    - get_order(order_id): Get details and status of an order.
+    - track_shipment(order_id): Get real-time tracking data.
+    - validate_coupon(code): Check if a discount code is valid.
+    - reset_password(email): Send a password reset link.
+    - initiate_refund(order_id): Refund the customer (only after validation).
+    - ask_proof(order_id): Request a photo of damaged items (Required for damaged claims).
+    - investigate_missing(order_id): Open a case for a lost package.
+    - escalate_to_human(reason): Forward to a human manager.
+    - respond(message): Send your final answer to the customer.
 
     Internal Reasoning: Always start your response with <thought>...</thought>
-    Final Action: End your response with exactly ONE tool call.
+    Final Action: End your response with exactly ONE tool call in brackets.
     Example: [get_order('ORD-101')]
     """
 ).strip()
+
 
 def build_history_lines(history: List[str]) -> str:
     if not history:
