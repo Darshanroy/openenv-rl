@@ -7,82 +7,65 @@ sdk: docker
 pinned: false
 ---
 
-# OpenEnv Customer Support Agent (CSA) RL
+# 🤖 OpenEnv Autonomous Customer Support Agent (CSA)
 
-[![OpenEnv](https://img.shields.io/badge/OpenEnv-Compatible-green)](https://github.com/openenv/openenv)
-[![Deployment](https://img.shields.io/badge/Deployment-Docker--Native-blue)](https://huggingface.co/spaces/Darshankumarr03/openenv-csa-rl)
+Welcome to the **OpenEnv CSA** project—a production-grade, multi-agent reinforcement learning environment and agent system. This repository features a decoupled architecture designed for high-performance evaluation and training.
 
-A production-grade, autonomous Customer Support Agent (CSA) built for the **OpenEnv** reinforcement learning competition. This system features a decoupled environment-agent architecture and a high-performance Multi-Agent Orchestrator.
+## 🏗️ System Architecture
+
+This project follows a **Decoupled Architecture**, separating the "World" (Environment) from the "Brain" (Agent).
+
+- **The World (Environment)**: A standalone FastAPI server hosted in a Docker container (HF Space). It manages the e-commerce database, tool execution, and rewards.
+- **The Brain (Agent)**: A multi-agent orchestrator that runs locally and communicates with the environment via REST API.
+
+```mermaid
+graph LR
+    A[Inference Script] --> B[Multi-Agent Orchestrator]
+    subgraph Agents
+        B --> C[Router Agent]
+        B --> D[Specialist Agent]
+        B --> E[Supervisor Agent]
+    end
+    Agents --> F[Environment API]
+    F --> G[(E-Commerce DB)]
+```
 
 ## 🚀 Key Features
 
-- **Decoupled Architecture**: Standalone Environment API served via FastAPI/Uvicorn for high-throughput RL training (GRPO compliant).
-- **Multi-Agent Brain**: A hierarchical reasoning pipeline featuring:
-  - **Router**: Classifies customer intent and urgency.
-  - **Specialist**: Expert execution of support tools (Returns, Refunds, Logistics).
-  - **Supervisor**: Quality control and final resolution validation.
-- **15-Task Master Suite**: Comprehensive evaluation tasks across Easy, Medium, and Hard tiers, covering:
-  - Complex Refunds & Damaged Goods
-  - Address Changes & Rescheduling
-  - Escalation & Abuse Handling
-- **RLHF-Ready**: Built-in feedback logging (`/session/feedback`) for collecting human or automated reinforcement signals.
-- **53KB Knowledge Base**: Full mock e-commerce database with real-world scenarios.
+- **Multi-Agent Reasoning**: A specialized pipeline (Router → Specialist → Supervisor) that prevents "thought loops" and ensures high-quality tool calls.
+- **15-Task Evaluation Suite**: 15 distinct e-commerce scenarios across **Easy, Medium, and Hard** difficulty tiers.
+- **Autonomous Toolset**: 17 specialized tools for order tracking, refund validation, address changes, and more.
+- **53KB Knowledge Base**: A massive, pre-populated database in `server/db.py` ensuring realistic scenarios.
+- **RLHF-Ready**: Built-in feedback logging for future Reinforcement Learning from Human Feedback.
 
-## 📐 System Architecture
+## 🛠️ Quick Start
 
-```mermaid
-graph TD
-    User([inference.py / User]) --> Orch[Multi-Agent Orchestrator]
-    subgraph Brain[Agentic Brain]
-        Orch --> |Check Intent| Router[Router Agent]
-        Router --> |Action Plan| Spec[Specialist Agent]
-        Spec --> |Verification| Super[Supervisor Agent]
-    end
-    Super --> |REST API| Env[Environment API]
-    subgraph Cloud[Hugging Face Space]
-        Env --> |Tool Call| Tools[Action Registry]
-        Tools --> |Query| DB[(53KB Mock DB)]
-        Tools --> |Observation| Env
-    end
-    Env --> |Result| Super
-```
-
-## 🛠️ Installation & Usage
-
-### 1. Requirements
+### 1. Setup
+Install the dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
-Create a `.env` file with your Hugging Face token:
+### 2. Configuration
+Create a `.env` file with your Hugging Face credentials:
 ```env
 HF_TOKEN=your_token_here
 ENV_URL=https://darshankumarr03-openenv-csa-rl.hf.space
 ```
 
 ### 3. Run Evaluation
-Execute the multi-agent inference script across all 15 tasks:
+Execute the multi-agent inference script to run the 8-task verification set:
 ```bash
 python inference.py
 ```
 
 ## ✅ Validation Status
 
-This repository passes all **OpenEnv Submission Validator** checks (3/3):
-1. [x] **Metadata Validation** (openenv.yaml)
-2. [x] **Environment Instantiation** (pyproject.toml scripts)
-3. [x] **API Connectivity** (Health Check & Step API)
-
-## 📁 Repository Structure
-
-- `server/`: Root-level Environment API implementation (FastAPI).
-- `agents/`: Multi-agent reasoning logic (Router, Specialist, Supervisor).
-- `my_env/`: Pydantic models and client-side utilities.
-- `Dockerfile`: Production deployment configuration.
-- `inference.py`: Main entry point for local evaluation and rollout.
+This project is officially **OpenEnv-compliant** and passes 3/3 validator checks:
+1. **Metadata**: Valid `openenv.yaml`.
+2. **Environment**: Successfully instantiates the `server` package.
+3. **API**: Clean health checks and step-by-step connectivity.
 
 ---
 **Author**: Darshankumarr03  
-**Version**: 2.1.0  
 **License**: MIT
