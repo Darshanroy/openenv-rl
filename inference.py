@@ -41,11 +41,11 @@ ENV_URL = os.getenv("ENV_URL", "https://darshankumarr03-openenv-csa-rl.hf.space"
 MAX_STEPS = 8
 DEBUG = True
 
-# --- Validation Set (8 Tasks) ---
-# Testing Easy, Medium, and Hard tasks to verify full tool coverage
+# --- Full 15-Task Evaluation Suite ---
 TASKS = [
     "easy_status", "easy_payment_fail", "easy_coupon", "easy_account", "easy_cancel",
-    "medium_delay", "medium_address", "hard_refund"
+    "medium_delay", "medium_address", "medium_reschedule", "medium_return", "medium_double_charge",
+    "hard_refund", "hard_damaged", "hard_missing", "hard_angry", "hard_escalation",
 ]
 
 
@@ -128,6 +128,10 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
             print(f"\n--- Step {step} ---")
             history_text = "\n".join(history_lines)
             
+            # Simulate thinking for better user experience
+            print(f"\n[STEP {step}] 🧠 Agent is thinking...")
+            time.sleep(1.5)
+            
             action_str, trace = orch.process(
                 customer_message=customer_msg,
                 observation_text=current_obs,
@@ -137,6 +141,7 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
 
             # Log Agent Trace to terminal
             print(trace.summary())
+            print(f"🚀 **Action Taken**: `{action_str}`")
 
             # 3. Execute step against the deployed environment
             step_result = env.step(action_str)
