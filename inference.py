@@ -60,7 +60,7 @@ SYSTEM_PROMPT = textwrap.dedent(
 def build_history_lines(history: List[str]) -> str:
     if not history:
         return "None"
-    return "\n".join(history[-4:])
+    return "\n".join(history[-6:])
 
 def build_user_prompt(step: int, observation_text: str, history: List[str]) -> str:
     prompt = textwrap.dedent(
@@ -81,11 +81,23 @@ def parse_model_action(response_text: str) -> str:
     if not response_text:
         return FALLBACK_ACTION
 
-    # Search for the last tool call in the text
+    # Search for the last tool call in the text [tool('param')]
     matches = ACTION_PATTERN.findall(response_text)
     if matches:
         return matches[-1].strip()
 
+    # If no brackets found, check if the model just wrote the tool call as plain text
+    # (Sometimes 7B models forget brackets)
+    for tool in ["get_order", "track_shipment", "validate_coupon", "reset_password", "initiate_refund", "ask_proof", "investigate_missing", "escalate_to_human", "respond"]:
+        if f"{tool}(" in response_text:
+            # Try to wrap it manually or at least log the failure
+            print(f"   [DEBUG] Found naked tool '{tool}' in response. Attempting recovery...")
+            start_idx = response_text.find(f"{tool}(")
+            end_idx = response_text.find(")", start_idx)
+            if end_idx != -1:
+                return f"[{response_text[start_idx:end_idx+1].strip()}]"
+
+    print(f"   [DEBUG RAW RESPONSE] Parser failed to find brackets in:\n{textwrap.indent(response_text, '      > ')}")
     return FALLBACK_ACTION
 
 def run_task(client: OpenAI, task_id: str) -> float:
@@ -119,16 +131,32 @@ def run_task(client: OpenAI, task_id: str) -> float:
             {"role": "user", "content": user_prompt}
         ]
 
-        try:
-            completion = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                temperature=TEMPERATURE,
-                max_tokens=MAX_TOKENS,
-            )
-            response_text = completion.choices[0].message.content or ""
-        except Exception as e:
-            print(f"   [LLM ERROR] Step {turn}: {e}")
+        # 2.1 Call LLM with Retries (Rate Limit Handler)
+        response_text = ""
+        attempts = 0
+        while attempts < 3:
+            attempts += 1
+            try:
+                completion = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    temperature=TEMPERATURE,
+                    max_tokens=MAX_TOKENS,
+                )
+                response_text = completion.choices[0].message.content or ""
+                break # Success
+            except Exception as e:
+                err_msg = str(e)
+                if "429" in err_msg or "rate_limit" in err_msg.lower():
+                    wait_time = 12 * attempts
+                    print(f"   [RATE LIMIT] Hit 429. Waiting {wait_time}s before retry {attempts}/3...")
+                    time.sleep(wait_time)
+                else:
+                    print(f"   [LLM ERROR] Step {turn}: {e}")
+                    response_text = FALLBACK_ACTION
+                    break
+
+        if not response_text:
             response_text = FALLBACK_ACTION
 
         action_str = parse_model_action(response_text)
