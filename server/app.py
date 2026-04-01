@@ -1,33 +1,45 @@
 """
 OpenEnv-compliant FastAPI server for the Customer Support Environment.
-Uses openenv.core.create_app() for spec compliance + custom session routes
-for the Streamlit dashboard (which needs stateful multi-turn episodes).
+
+Architectural Overview:
+- Compliant Entry Points: Implements the standard OpenEnv '/state', '/step', and '/reset' via openenv.core.
+- Session Management: Adds '/session/reset', '/session/step', etc. to support stateful, multi-turn 
+  simulations in the local inference script and Streamlit dashboard.
 """
 import uuid
 from typing import Optional, Dict
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+# Internal imports from the environment package
 from openenv.core import create_app
 from my_env.models import SupportAction, SupportObservation, SupportState
 from server.my_environment import SupportEnvironment
 
 
-# ── Session store for multi-turn conversations ───────────────────────────────
+# ── Global Session Store ─────────────────────────────────────────────────────
+# This dictionary holds active SupportEnvironment instances keyed by session_id.
+# It allows the statless FastAPI server to maintain state for multiple concurrent users/tasks.
 _sessions: Dict[str, SupportEnvironment] = {}
 
 
 class SessionRequest(BaseModel):
+    """Pydantic model for session initialization."""
     session_id: str
     task_id: Optional[str] = None
 
 
 def create_environment():
-    """Factory function that returns a fresh SupportEnvironment instance."""
+    """
+    Factory function required by openenv.core.create_app.
+    Returns a fresh, default SupportEnvironment instance.
+    """
     return SupportEnvironment(max_turns=8)
 
 
-# Create the OpenEnv-spec app (validates with `openenv validate`)
+# ── OpenEnv Specification App ────────────────────────────────────────────────
+# This initializes the standard OpenEnv endpoints that allow the 'openenv validate' 
+# and 'openenv eval' tools to interact with this server.
 app = create_app(
     env=create_environment,
     action_cls=SupportAction,
@@ -37,17 +49,20 @@ app = create_app(
 )
 
 
-# ── Custom session-based routes (for Streamlit dashboard) ────────────────────
+# ── Custom Session-Based Routes ───────────────────────────────────────────────
 
 @app.get("/health")
 def health():
-    """Liveness probe for the OpenEnv validator."""
+    """Liveness probe used by the OpenEnv validator and Hugging Face infrastructure."""
     return {"status": "ok", "env": "CustomerSupport-v1"}
 
 
 @app.post("/session/reset")
 def session_reset(req: SessionRequest):
-    """Start a new session-based episode for the dashboard."""
+    """
+    Initializes or restarts a specific session.
+    It maps a human-readable session_id to a fresh SupportEnvironment instance.
+    """
     env = SupportEnvironment(max_turns=8)
     _sessions[req.session_id] = env
     obs = env.reset(task_id=req.task_id)
@@ -56,23 +71,27 @@ def session_reset(req: SessionRequest):
 
 @app.post("/session/step/{session_id}")
 def session_step(session_id: str, action: SupportAction):
-    """Step a session-based episode."""
+    """
+    Executes a single step (Action -> Reward/Observation) within an active session.
+    If the episode is 'done', it cleans up the session memory.
+    """
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found. Call /session/reset first.")
     env = _sessions[session_id]
     obs = env.step(action)
     if obs.done:
-        _sessions.pop(session_id, None)  # cleanup finished sessions
+        _sessions.pop(session_id, None)  # Memory management: cleanup finished sessions
     return obs.model_dump()
 
 
 class FeedbackRequest(BaseModel):
+    """Pydantic model for RLHF feedback collection."""
     message_index: int
     feedback_type: str  # e.g. "thumbs_up", "thumbs_down"
     
 @app.get("/session/state/{session_id}")
 def session_state(session_id: str):
-    """Get state for a session-based episode."""
+    """Returns the current internal state (variables, history) for a session."""
     if session_id not in _sessions:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found.")
     return _sessions[session_id].state.model_dump()
@@ -80,16 +99,19 @@ def session_state(session_id: str):
 
 @app.post("/session/feedback/{session_id}")
 def session_feedback(session_id: str, req: FeedbackRequest):
-    """Log feedback for an RLHF dataset or immediate dashboard reporting."""
+    """
+    Collects RLHF feedback data for future model fine-tuning.
+    It appends the feedback to a 'feedback.jsonl' file for persistence.
+    """
     import json
     feedback_data = {
         "session_id": session_id,
         "message_index": req.message_index,
         "feedback_type": req.feedback_type,
-        "timestamp": str(uuid.uuid4())[:8] # simplified for now
+        "timestamp": str(uuid.uuid4())[:8] 
     }
     
-    # Save to local file for training data collection
+    # Persistent storage for reinforcement learning datasets
     try:
         with open("feedback.jsonl", "a") as f:
             f.write(json.dumps(feedback_data) + "\n")
@@ -100,9 +122,11 @@ def session_feedback(session_id: str, req: FeedbackRequest):
     return {"status": "success", "session_id": session_id, "feedback": req.feedback_type}
 
 
-
 def main():
-    """Entry point for `openenv serve` and `[project.scripts]`."""
+    """
+    Entry point for the environment server.
+    Starts the Uvicorn server on port 7860 (Hugging Face default).
+    """
     import uvicorn
     uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
 

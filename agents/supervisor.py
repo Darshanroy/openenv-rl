@@ -1,7 +1,9 @@
 """
-Supervisor Agent — Reviews specialist output, handles angry customers,
-and makes the final decision: respond, request more info, or escalate.
-Refactored to use the OpenAI API client for high-performance inference.
+Supervisor Agent — OpenEnv CSA
+==============================
+Acts as the final quality control layer in the multi-agent pipeline. 
+The supervisor reviews the specialist's work, addresses customer sentiment 
+(especially frustration), and generates the final response or escalation action.
 """
 from typing import List, Dict, Optional
 import re
@@ -24,11 +26,12 @@ SUPERVISOR_SYSTEM_PROMPT = (
 
 class SupervisorAgent:
     """
-    The Supervisor reviews specialist work and generates the final response via the OpenAI API client.
-    For angry/escalation scenarios, it takes direct control.
+    The Supervisor reviews specialist output and generates the final response callback.
+    It specializes in empathic communication and escalation management.
     """
 
     def __init__(self, client, model_id: str):
+        """Initializes the supervisor with the API client and model identifier."""
         self.client = client
         self.model_id = model_id
         self.name = "Supervisor"
@@ -37,7 +40,8 @@ class SupervisorAgent:
     def review_and_respond(self, customer_message: str, specialist_actions: List[str],
                            specialist_name: str, observation_text: str) -> str:
         """
-        Reviews what the specialist did and generates the final action via the OpenAI API client.
+        Processes specialist actions and environment feedback to produce the final turn action.
+        Uses the OpenAI API to craft a helpful, polite response or escalate to human support.
         """
         actions_summary = "\n".join([f"  - {a}" for a in specialist_actions]) if specialist_actions else "  (no actions taken)"
 
@@ -73,7 +77,10 @@ class SupervisorAgent:
             return f"[respond('I encountered an internal error. Please try again later.')]"
 
     def should_escalate(self, customer_message: str) -> bool:
-        """Quick heuristic check if escalation is likely needed."""
+        """
+        Identifies high-urgency or negative sentiment signals that require 
+        immediate attention from the Supervisor or a Human Manager.
+        """
         escalation_signals = [
             "manager", "supervisor", "sue", "lawyer", "complaint",
             "pathetic", "terrible", "worst", "furious", "unacceptable"

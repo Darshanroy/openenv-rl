@@ -1,6 +1,14 @@
-﻿
-# Simulated Global Databases for the OpenEnv Agent Simulation
+"""
+Mock E-Commerce Database — OpenEnv CSA
+=====================================
+This file acts as the 'Source of Truth' for the environment. It contains 
+simulated records for Users, Orders, Payments, and Logistics. 
 
+The 53KB of data provided here ensures that the agent encounters realistic 
+scenarios (e.g. missing orders, failed payments, and specific delivery locations).
+"""
+
+# Consolidated Global Databases
 USERS_DB = {
     "u5": {
         "user_id": "u5",

@@ -60,11 +60,12 @@ SPECIALIST_CONFIGS = {
 
 class SpecialistAgent:
     """
-    A specialist agent that generates tool calls using its restricted system prompt.
-    All specialists share the same underlying model API but have different instructions.
+    A specialized agent that generates tool calls for its specific domain 
+    (Order, Logistics, or Finance) using a restricted toolset.
     """
 
     def __init__(self, agent_type: str, client, model_id: str):
+        """Initializes the specialist with its specific system prompt and allowed toolset."""
         if agent_type not in SPECIALIST_CONFIGS:
             raise ValueError(f"Unknown agent type: {agent_type}. Must be one of {list(SPECIALIST_CONFIGS.keys())}")
 
@@ -75,19 +76,23 @@ class SpecialistAgent:
 
     @property
     def name(self) -> str:
+        """The display name of the specialist."""
         return self.config["name"]
 
     @property
     def emoji(self) -> str:
+        """The emoji used for logging."""
         return self.config["emoji"]
 
     @property
     def allowed_tools(self) -> List[str]:
+        """The list of tools this specialist is permitted to use."""
         return self.config["allowed_tools"]
 
     def generate_action(self, observation_text: str, history_text: str = "") -> Tuple[str, str]:
         """
-        Given the current observation (environment feedback), generate thoughts and the next tool call via the OpenAI API client.
+        Uses the LLM to generate the next reasoning-action step.
+        Returns a tuple of (thought, action_string).
         """
         # History window (approx. 5-7 turns) for end-to-end resolution.
         history_lines = history_text.split("\n")

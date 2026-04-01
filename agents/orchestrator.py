@@ -1,7 +1,14 @@
 """
-Orchestrator — The main multi-agent pipeline.
-Routes customer messages → Specialist → Supervisor → Final Response.
-Refactored to be API-driven, using the OpenAI/HF Router client.
+Multi-Agent Orchestrator — OpenEnv CSA
+=====================================
+The central brain of the autonomous agent. This module coordinates the 
+interaction between the Router, Specialist Agents, and the Supervisor.
+
+Pipeline Control Flow:
+1. Routing: Classify customer intent to select the best Specialist.
+2. Specialist: Generate domain-specific tool calls (Order, Logistics, Finance).
+3. Supervision: Review specialist output for quality and sentiment, 
+   producing the final response back to the customer.
 """
 from typing import List, Dict, Tuple
 
@@ -11,11 +18,15 @@ from .supervisor import SupervisorAgent
 
 
 class AgentTrace:
-    """Records which agents handled a request and what they did."""
+    """
+    Utility for recording and visualizing the multi-agent reasoning chain.
+    Captures which agents were invoked, their actions, and internal thoughts for terminal logging.
+    """
     def __init__(self):
         self.steps: List[Dict] = []
 
     def add(self, agent_name: str, agent_emoji: str, action: str, detail: str = ""):
+        """Appends a new step to the execution trace."""
         self.steps.append({
             "agent": agent_name,
             "emoji": agent_emoji,
@@ -24,6 +35,7 @@ class AgentTrace:
         })
 
     def summary(self) -> str:
+        """Returns a formatted multi-line summary of the entire agent workflow."""
         lines = []
         for s in self.steps:
             lines.append(f"{s['emoji']} **{s['agent']}**: {s['action']}")
@@ -32,26 +44,24 @@ class AgentTrace:
         return "\n".join(lines)
 
     def flow(self) -> str:
-        """Short inline flow: 🧭 Router → 📦 Order → 👨‍💼 Supervisor"""
+        """Concise visualization: 🧭 Router → 📦 Order."""
         return " → ".join([f"{s['emoji']} {s['agent']}" for s in self.steps])
 
 
 class Orchestrator:
     """
-    Multi-agent orchestrator for the OpenEnv CSA system.
-    
-    Flow:
-    1. Router classifies the customer intent.
-    2. Specialist agent generates tool call(s) via the API.
-    3. Supervisor reviews and produces the final response via the API.
+    High-level orchestrator that manages the end-to-end multi-agent pipeline.
     """
 
     def __init__(self, openai_client, model_id: str):
+        """
+        Initializes the agent brain with a router, supervisor, and specialized agents.
+        """
         self.router = Router()
         self.supervisor = SupervisorAgent(openai_client, model_id)
         self.model_id = model_id
 
-        # Create one specialist per category (all share the same API client)
+        # Register specialized agents for domain-specific handling
         self.specialists = {}
         for agent_type in SPECIALIST_CONFIGS:
             self.specialists[agent_type] = SpecialistAgent(agent_type, openai_client, model_id)
@@ -60,9 +70,7 @@ class Orchestrator:
                 task_id: str = None, history_text: str = "") -> Tuple[str, AgentTrace]:
         """
         Main entry point. Processes a customer message through the multi-agent pipeline.
-        
-        Returns:
-            (action_string, AgentTrace)
+        Returns the selected tool action and a trace of the reasoning flow.
         """
         trace = AgentTrace()
 

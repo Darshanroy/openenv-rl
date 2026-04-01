@@ -1,14 +1,7 @@
 """
-Inference Script — OpenEnv CSA (Multi-Agent Edition)
-===================================================
-MANDATORY
-- Before submitting, ensure the following variables are defined in your environment configuration:
-    API_BASE_URL   The API endpoint for the LLM.
-    MODEL_NAME     The model identifier to use for inference.
-    HF_TOKEN       Your Hugging Face / API key.
+We are importing the orchestrator logic from the agents folder
 
-- This version uses the Multi-Agent Orchestrator (Router -> Specialist -> Supervisor)
-- Participants must use OpenAI Client for all LLM calls using above variables
+this script depends on the agents folder for the agentic soo run this script with the agents folder in local  
 """
 
 import os
@@ -29,6 +22,10 @@ load_dotenv()
 # ==============================================================================
 # MANDATORY CONFIGURATION
 # ==============================================================================
+# The system pulls these from the environment or a .env file.
+# API_BASE_URL: The endpoint for LLM inference (e.g. HF Router or OpenAI)
+# API_KEY: Your authentication token
+# MODEL_NAME: The specific model ID to use for reasoning
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
@@ -36,12 +33,14 @@ MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 # ==============================================================================
 # ENVIRONMENT CONFIGURATION — Points to the deployed HF Space
 # ==============================================================================
+# ENV_URL: The public URL where your Dockerized Environment API is running.
 ENV_URL = os.getenv("ENV_URL", "https://darshankumarr03-openenv-csa-rl.hf.space")
 
-MAX_STEPS = 8
-DEBUG = True
+MAX_STEPS = 8  # Maximum turns allowed per customer interaction
+DEBUG = True   # Enable detailed log output
 
 # --- Full 15-Task Evaluation Suite ---
+# These task IDs must exist in the environment's mock database (server/db.py)
 TASKS = [
     "easy_status", "easy_payment_fail", "easy_coupon", "easy_account", "easy_cancel",
     "medium_delay", "medium_address", "medium_reschedule", "medium_return", "medium_double_charge",
@@ -54,10 +53,15 @@ TASKS = [
 # ==============================================================================
 
 class SupportEnvClient:
-    """Lightweight client that talks to the OpenEnv CSA environment over HTTP."""
+    """
+    Lightweight client that talks to the OpenEnv CSA environment over HTTP.
+    It encapsulates the REST API calls to the remote Hugging Face Space.
+    """
 
     def __init__(self, base_url: str):
+        # Ensure base_url doesn't have a trailing slash
         self.base_url = base_url.rstrip("/")
+        # Unique session ID for each evaluation run to prevent state collisions
         self.session_id = f"eval_{int(time.time())}"
 
     def reset(self, task_id: Optional[str] = None) -> Dict[str, Any]:
@@ -101,6 +105,17 @@ class SupportEnvClient:
 # ==============================================================================
 
 def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
+    """
+    Orchestrates the evaluation of a single customer support task.
+    
+    Args:
+        orch: The Multi-Agent Orchestrator (Brain).
+        env: The SupportEnvClient (World API).
+        task_id: The specific scenario to evaluate.
+        
+    Returns:
+        The final grader score (0.0 to 10.0).
+    """
     print(f"\n{'='*50}")
     print(f"[EVAL] Task: {task_id}")
     print(f"{'='*50}")
@@ -108,30 +123,30 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
     history_lines: List[str] = []
 
     try:
-        # 1. Reset environment for this task
+        # 1. Reset environment for this specific task
         obs = env.reset(task_id=task_id)
-        # messages_list = obs.get("messages", [])
-        # customer_msg = next((m["content"] for m in messages_list if m["role"] == "customer"), "")
-        customer_msg = obs.get("prompt", "") # The goal prompt
+        customer_msg = obs.get("prompt", "")  # The primary goal prompt for the agent
         
         current_obs = f"Task Start: {customer_msg}"
         done = obs.get("done", False)
 
         print(f"Goal: {customer_msg}")
 
+        # Execute up to MAX_STEPS until the task is complete
         for step in range(1, MAX_STEPS + 1):
             if done:
                 print("\n✅ Task concluded by environment.")
                 break
 
-            # 2. Multi-Agent Reasoning via Orchestrator
+            # 2. Multi-Agent Reasoning via Orchestrator (Router -> Specialist -> Supervisor)
             print(f"\n--- Step {step} ---")
             history_text = "\n".join(history_lines)
             
-            # Simulate thinking for better user experience
+            # Simulate 'thinking' time for a realistic user experience
             print(f"\n[STEP {step}] 🧠 Agent is thinking...")
             time.sleep(1.5)
             
+            # Generate the next action
             action_str, trace = orch.process(
                 customer_message=customer_msg,
                 observation_text=current_obs,
@@ -139,11 +154,11 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
                 history_text=history_text
             )
 
-            # Log Agent Trace to terminal
+            # Log the visual agent trace and final action to the terminal
             print(trace.summary())
             print(f"🚀 **Action Taken**: `{action_str}`")
 
-            # 3. Execute step against the deployed environment
+            # 3. Execute the action against the deployed environment
             step_result = env.step(action_str)
             reward = step_result.get("reward", 0.0) or 0.0
             done = step_result.get("done", False)

@@ -1,6 +1,9 @@
 """
-OpenEnv-compliant Customer Support Environment.
-Inherits from openenv.core.Environment and implements reset(), step(), state property.
+OpenEnv-compliant Customer Support Environment (The 'World').
+
+This file defines the core SupportEnvironment class which implements the 
+standard OpenEnv interface (reset, step, state). It acts as the simulation
+engine, managing the interaction between the agent and the mock e-commerce database.
 """
 import re
 import ast
@@ -8,8 +11,11 @@ import random
 import uuid
 from typing import Dict, Any, Tuple, Optional, List
 
+# Base environment class from openenv.core
 from openenv.core import Environment
+# Shared data models for actions, observations and internal state
 from my_env.models import SupportAction, SupportObservation, SupportState
+# Registry of available tools for order management, logistics and finance
 from server.tools import ACTION_REGISTRY
 
 
@@ -168,8 +174,12 @@ class SupportEnvironment(Environment):
     SUPPORTS_CONCURRENT_SESSIONS: bool = True
 
     def __init__(self, max_turns: int = 8):
+        """
+        Initializes a fresh SupportEnvironment.
+        Args:
+            max_turns: The maximum number of interaction steps before forced termination.
+        """
         self.max_turns = max_turns
-        # Per-episode state
         self._episode_id: Optional[str] = None
         self._step_count: int = 0
         self._task_id: str = ""
@@ -180,17 +190,22 @@ class SupportEnvironment(Environment):
         self._done: bool = False
         self._variables: Dict[str, Any] = {}
 
-    # ── OpenEnv Interface ────────────────────────────────────────────────────
+    # ── OpenEnv Interface Implementation ─────────────────────────────────────
 
     def reset(self, seed: Optional[int] = None, episode_id: Optional[str] = None, **kwargs) -> SupportObservation:
-        """Start a new customer support episode."""
+        """
+        Starts a new customer support episode.
+        Loads the task-specific scenario and resets the turn count and history.
+        """
         if seed is not None:
             random.seed(seed)
 
+        # 1. Load the task configuration based on the provided task_id
         task_id = kwargs.get("task_id")
         if task_id and task_id in TASK_CONFIGS:
             task = TASK_CONFIGS[task_id]
         else:
+            # Fallback to random task for discovery/training
             task_id = random.choice(list(TASK_CONFIGS.keys()))
             task = TASK_CONFIGS[task_id]
 
@@ -202,6 +217,7 @@ class SupportEnvironment(Environment):
         self._done = False
         self._variables = {"difficulty": task["difficulty"]}
 
+        # 2. Build the initial prompt instructions for the agent
         self._prompt = (
             f"SYSTEM: You are an E-Commerce Customer Support Agent. Task: {task_id}\n"
             "Format tool calls in brackets: [tool_name('param1', 'param2')]\n"
@@ -211,6 +227,7 @@ class SupportEnvironment(Environment):
             "escalate_to_human, respond."
         )
 
+        # 3. Initialize state history with the customer's initial message
         self._messages = [
             {"role": "customer", "content": task["initial_message"]}
         ]
@@ -223,8 +240,12 @@ class SupportEnvironment(Environment):
         )
 
     def step(self, action: SupportAction, timeout_s: Optional[float] = None, **kwargs) -> SupportObservation:
-        """Process one agent action and return the next observation."""
+        """
+        Executes one interaction step.
+        Processes the agent's tool call against the backend and returns results.
+        """
         if self._done:
+            # Task finished: Return current messages with final scoring
             return SupportObservation(
                 prompt=self._prompt,
                 messages=list(self._messages),
@@ -237,33 +258,41 @@ class SupportEnvironment(Environment):
         guess = action.message.strip()
         self._messages.append({"role": "agent", "content": guess})
 
+        # 1. Action Parser: Extracts tool name and arguments from the agent's bracketed action
         func_name, args, kwargs_parsed, error_msg = self._parse_action_string(guess)
         feedback = ""
-        reward = -1.0  # Global step penalty
+        reward = -1.0  # Constant penalty for each step to encourage efficiency
 
+        # 2. Tool Execution Logic
         if error_msg:
+            # Syntax failure in the agent's action format
             feedback = f"Syntax Error: {error_msg}"
             reward -= 4.0
         elif func_name == "respond":
+            # Success resolution: Agent has provided a final response to the customer
             feedback = "Task concluded by Agent response."
             self._tools_used.add("respond")
             reward += self._scenario.get("intent_rewards", {}).get("respond", 0)
             self._done = True
-            reward += 10.0  # Resolution bonus
+            reward += 10.0  # Major success bonus
         elif func_name in ACTION_REGISTRY:
+            # Execute standard backend tool logic
             try:
                 res = ACTION_REGISTRY[func_name](*args, **kwargs_parsed)
                 feedback = f"API Output: {str(res)}"
                 self._tools_used.add(func_name)
+                # Apply tool-specific reward weights from the task configuration
                 reward += self._scenario.get("intent_rewards", {}).get(func_name, 0)
                 if func_name == "escalate_to_human":
                     self._done = True
                     reward += 10.0
                     feedback += " Task Escalated."
             except Exception as e:
+                # Handle backend execution failures
                 feedback = f"Execution Error: {e}"
                 reward -= 5.0
         else:
+            # Fallback for invalid tool names
             feedback = f"Unknown Tool '{func_name}'"
             reward -= 5.0
 
@@ -314,15 +343,22 @@ class SupportEnvironment(Environment):
     # ── Internal helpers ─────────────────────────────────────────────────────
 
     def _parse_action_string(self, action_str: str) -> Tuple[Optional[str], list, dict, str]:
+        """
+        Parses the agent's bracketed response string into a tool name and arguments.
+        Supports standard Python call syntax (e.g., [get_order('id')]) via the 'ast' module.
+        """
         match = re.search(r'\[(.*?)\]', action_str, re.DOTALL)
         if not match:
             return None, [], {}, "No bracketed tool call found."
         inner = match.group(1).strip()
 
+        # Handle the special 'respond' case (which might be raw text or quoted)
         if inner.startswith("respond(") or inner.startswith("respond "):
             text = inner.replace("respond(", "").replace("respond ", "").strip("')\"\\ ")
             return "respond", [text], {}, ""
+        
         try:
+            # Use abstract syntax trees to safely evaluate function parameters
             tree = ast.parse(inner, mode='eval')
             if isinstance(tree.body, ast.Call):
                 return (
@@ -337,14 +373,16 @@ class SupportEnvironment(Environment):
 
     def _calculate_grader_score(self) -> float:
         """
-        Calculate weighted score (0.0 to 1.0) with PROTOCOL ENFORCEMENT.
-        Conditional triggers ensure agents don't 'guess' their way to a solve.
+        Calculate weighted success score (0.0 to 1.0) with PROTOCOL ENFORCEMENT.
+        
+        This ensures agents follow the correct internal procedures (e.g., validating 
+        a return BEFORE initiating a refund) rather than guessing.
         """
         weights = self._scenario.get("grader_weights", {})
         used = self._tools_used
         score = 0.0
 
-        # Protocols: Define required tool sequences
+        # Protocol definitions: Require a prerequisite tool to unlock a main tool's reward.
         protocols = {
             "hard_damaged": ("ask_proof", "initiate_refund"),
             "hard_missing": ("investigate_missing", "escalate_to_human"),
@@ -352,14 +390,14 @@ class SupportEnvironment(Environment):
             "hard_refund": ("validate_return", "initiate_refund")
         }
 
-        # Check for blocked tools
+        # Identify tools that were used without their required prerequisites
         blocked_tools = set()
         if self._task_id in protocols:
             prereq, main_tool = protocols[self._task_id]
             if main_tool in used and prereq not in used:
                 blocked_tools.add(main_tool)
 
-        # sum weights for allowed tools
+        # Sum rewards for all correctly utilized tools
         for tool, weight in weights.items():
             if tool in used and tool not in blocked_tools:
                 score += weight

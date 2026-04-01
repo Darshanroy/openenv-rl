@@ -11,6 +11,27 @@ pinned: false
 
 Welcome to the **OpenEnv CSA** project—a production-grade, multi-agent reinforcement learning environment and agent system. This repository features a decoupled architecture designed for high-performance evaluation and training.
 
+## 📂 Project Structure
+
+```text
+.
+├── agents/             # Multi-agent reasoning logic (The 'Brain')
+│   ├── orchestrator.py # High-level coordination (Router → Specialist → Supervisor)
+│   ├── router.py       # Intent classification and urgency detection
+│   ├── specialist.py   # Domain-specific tool usage (Order, Logistics, Finance)
+│   └── supervisor.py   # Quality control, empathy, and escalation logic
+├── server/             # Environment API (The 'World')
+│   ├── app.py          # FastAPI application & session-based REST routes
+│   ├── db.py           # Comprehensive E-commerce Mock Database (53KB)
+│   ├── my_environment.py # Core SupportEnvironment (OpenEnv Spec)
+│   └── tools.py        # 17 specialized support tools (Refunds, Tracking, etc.)
+├── .env                # Local secrets and configuration (HF_TOKEN)
+├── Dockerfile          # Production deployment specification (Hugging Face)
+├── inference.py        # Main evaluation entry point (15-Task Suite)
+├── openenv.yaml        # OpenEnv submission metadata and entry points
+└── README.md           # This file
+```
+
 ## 🏗️ System Architecture
 
 This project follows a **Decoupled Architecture**, separating the "World" (Environment) from the "Brain" (Agent).
