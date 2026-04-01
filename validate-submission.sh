@@ -130,14 +130,28 @@ fi
 
 log "${BOLD}Step 3/3: Running openenv validate${NC} ..."
 
-if ! command -v openenv &>/dev/null; then
+# Add common Windows Python scripts directory to PATH for Git Bash/MSYS compatibility
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" ]]; then
+  USER_SCRIPTS_PATH="/c/Users/$(whoami)/AppData/Roaming/Python/Python314/Scripts"
+  if [ -d "$USER_SCRIPTS_PATH" ]; then
+    export PATH="$PATH:$USER_SCRIPTS_PATH"
+    log "  Added $USER_SCRIPTS_PATH to PATH for validation"
+  fi
+fi
+
+if ! command -v openenv &>/dev/null && ! command -v openenv.exe &>/dev/null; then
   fail "openenv command not found"
   hint "Install it: pip install openenv-core"
+  hint "If already installed, ensure the Scripts directory is in your PATH."
   stop_at "Step 3"
 fi
 
 VALIDATE_OK=false
-VALIDATE_OUTPUT=$(cd "$REPO_DIR" && openenv validate 2>&1) && VALIDATE_OK=true
+# Use 'openenv.exe' if 'openenv' isn't directly recognized in some Windows shells
+OPENENV_CMD="openenv"
+command -v openenv.exe &>/dev/null && OPENENV_CMD="openenv.exe"
+
+VALIDATE_OUTPUT=$(cd "$REPO_DIR" && "$OPENENV_CMD" validate 2>&1) && VALIDATE_OK=true
 
 if [ "$VALIDATE_OK" = true ]; then
   pass "openenv validate passed"

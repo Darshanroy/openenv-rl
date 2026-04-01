@@ -6,17 +6,13 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic",
-    "torch",
-    "transformers",
-    "datasets",
-    "accelerate",
-    "huggingface_hub",
-    "streamlit",
     "python-multipart",
     "pandas",
     "openai",
-    "openenv-core"
+    "openenv-core",
+    "python-dotenv",
+    "requests",
 ]
 
 [project.scripts]
-serve = "my_env.server.app:main"
+server = "my_env.server.app:main"
