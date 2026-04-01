@@ -1,11 +1,15 @@
 import os
+from dotenv import load_dotenv
+
+# Load key settings from .env
+load_dotenv()
 
 # Model Settings
-MODEL_NAME = "Qwen/Qwen2.5-1.5B"
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-1.5B")
 OUTPUT_DIR = "training_outputs"
 
 # Environment Server
-ENV_SERVER_URL = os.environ.get("ENV_SERVER_URL", "http://127.0.0.1:8000")
+ENV_URL = os.getenv("ENV_URL", "http://127.0.0.1:8000")
 
 # Training Hyperparameters
 NUM_EPOCHS = 1

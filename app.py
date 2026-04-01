@@ -7,20 +7,26 @@ import requests
 import pandas as pd
 import numpy as np
 import time
+from dotenv import load_dotenv
+
+# Load environment configuration
+load_dotenv()
 
 # Ensure local imports work
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from my_env.client import SupportEnvClient
 from my_env.models import SupportAction
 from training.inference import run_benchmark
-from training.config import METRICS_FILE, ENV_SERVER_URL
+from training.config import METRICS_FILE, ENV_URL
 from agents.orchestrator import Orchestrator
 
 # ── Constants ──────────────────────────────────────────────────────────────
-MODEL_NAME = "Qwen/Qwen2.5-1.5B"
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+
 SAMPLE_PROMPTS = {
+
     "easy_status": [
         "Hi, I'm checking on ORD-101. It's been a while since I heard anything. Can you tell me if it shipped yet?", 
         "Status for ORD-101 please. Also, what items are in it?", 
@@ -94,7 +100,7 @@ def load_system():
         device_map="auto"
     )
     orch = Orchestrator(model, tokenizer, DEVICE)
-    client = SupportEnvClient(base_url=ENV_SERVER_URL)
+    client = SupportEnvClient(base_url=ENV_URL)
     return orch, client
 
 def wait_for_server(url):
@@ -112,11 +118,12 @@ if "scores" not in st.session_state:
 def reset_chat(task_id):
     st.session_state.messages = []
     st.session_state.scores = None
-    if wait_for_server(ENV_SERVER_URL):
+    if wait_for_server(ENV_URL):
         try:
             client.reset(task_id=task_id)
         except Exception as e:
             st.error(f"Environment reset failed: {e}")
+
 
 # ── Sidebar Configuration ──
 with st.sidebar:
@@ -206,9 +213,10 @@ with tab_chat:
 
     # Handle incoming messages
     if user_input := st.chat_input("Type your message here..."):
-        if not wait_for_server(ENV_SERVER_URL):
+        if not wait_for_server(ENV_URL):
             st.error("⚠️ Environment API server is offline. Please start it using uvicorn.")
             st.stop()
+
             
         # First message handler (if user didn't click reset)
         if len(st.session_state.messages) == 0:
@@ -223,18 +231,18 @@ with tab_chat:
             # Agent Processing Turn (Autonomous Loop) inside the container
             with st.chat_message("assistant", avatar="🤖"):
                 with st.status(f"Agent Processing Trace...", expanded=True) as status:
-                
+                    
                     current_obs = f"Customer says: {user_input}"
                     max_substeps = 5
                     substep = 0
                     step_notes = ""
                     cumulative_history_items = []
-                
+                    
                     # Seed history with what's already in the session
                     for x in st.session_state.messages:
                         cumulative_history_items.append(f"{'Customer' if x['role']=='user' else 'Agent'}: {x['content']}")
                         if x.get("env"): cumulative_history_items.append(f"Environment: {x['env']}")
-                
+                    
                     final_action = None
                     final_res = None
                     display_content = "I'm still thinking about that..."
@@ -244,10 +252,10 @@ with tab_chat:
                     while substep < max_substeps:
                         substep += 1
                         status.update(label=f"Step {substep}: Thinking...")
-                    
+                        
                         # Build history text
                         history_text = "\n".join(cumulative_history_items)
-                    
+                        
                         # 1. Routing & Thinking
                         action, trace = orchestrator.process(
                             customer_message=user_input,
@@ -255,11 +263,11 @@ with tab_chat:
                             task_id=selected_task,
                             history_text=history_text
                         )
-                    
+                        
                         final_action = action
                         all_flows.append(trace.flow())
                         step_notes += f"\n\n### turn {substep}\n{trace.summary()}"
-                    
+                        
                         # 2. Check for final response [respond('...')]
                         import re
                         respond_match = re.search(r"\[respond\('(.*?)'\)\]", action, re.DOTALL)
@@ -267,7 +275,7 @@ with tab_chat:
                             display_content = respond_match.group(1).replace("\\'", "'")
                             is_final_msg = True
                             break
-                    
+                        
                         # 3. Handle Tool Call
                         status.update(label=f"Step {substep}: Executing {action[:30]}...")
                         try:
@@ -275,29 +283,29 @@ with tab_chat:
                             final_res = res
                             obs_text = res.messages[-1]["content"] if res.messages else "Received tool success."
                             current_obs = f"Environment Output: {obs_text}"
-                        
+                            
                             # Update local history for next sub-step
                             cumulative_history_items.append(f"Agent: {action}")
                             cumulative_history_items.append(f"Environment: {obs_text}")
-                        
+                            
                             if res.done: break # Scenario resolved
                         except Exception as e:
                             st.error(f"Tool execution failed: {e}")
                             break
-                
+                    
                     status.update(label=f"Processing complete in {substep} steps", state="complete")
 
                 # Result Rendering
                 st.markdown(display_content)
-            
+                
                 # Show Environment Data from LAST tool call if it wasn't a final respond (or if requested)
                 last_env_obs = final_res.messages[-1]["content"] if (final_res and final_res.messages) else None
-            
+                
                 reward_score = None
                 if final_res and final_res.done:
                     reward_score = final_res.metadata.get("grader_score", 0.0)
                     st.success(f"✅ **Task Resolved** — Final Reward: **{reward_score:.2f}**")
-            
+                
                 # Save to state
                 st.session_state.messages.append({
                     "role": "assistant", 
