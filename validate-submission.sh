@@ -1,23 +1,4 @@
-#!/usr/bin/env bash
-#
-# validate-submission.sh — OpenEnv Submission Validator
-#
-# Checks that your HF Space is live, Docker image builds, and openenv validate passes.
-#
-# Prerequisites:
-#   - Docker:       https://docs.docker.com/get-docker/
-#   - openenv-core: pip install openenv-core
-#   - curl (usually pre-installed)
-#
-# Run:
-#   ./validate-submission.sh <ping_url> [repo_dir]
-#
-# Arguments:
-#   ping_url   Your HuggingFace Space URL (e.g. https://your-space.hf.space)
-#   repo_dir   Path to your repo (default: current directory)
-#
-
-set -uo pipefail
+ set -uo pipefail
 
 DOCKER_BUILD_TIMEOUT=600
 if [ -t 1 ]; then

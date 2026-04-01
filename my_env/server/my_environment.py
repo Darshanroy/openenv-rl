@@ -247,7 +247,7 @@ class SupportEnvironment(Environment):
         elif func_name == "respond":
             feedback = "Task concluded by Agent response."
             self._tools_used.add("respond")
-            reward += self._scenario["intent_rewards"].get("respond", 0)
+            reward += self._scenario.get("intent_rewards", {}).get("respond", 0)
             self._done = True
             reward += 10.0  # Resolution bonus
         elif func_name in ACTION_REGISTRY:
@@ -255,7 +255,7 @@ class SupportEnvironment(Environment):
                 res = ACTION_REGISTRY[func_name](*args, **kwargs_parsed)
                 feedback = f"API Output: {str(res)}"
                 self._tools_used.add(func_name)
-                reward += self._scenario["intent_rewards"].get(func_name, 0)
+                reward += self._scenario.get("intent_rewards", {}).get(func_name, 0)
                 if func_name == "escalate_to_human":
                     self._done = True
                     reward += 10.0
