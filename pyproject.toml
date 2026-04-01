@@ -15,4 +15,4 @@ dependencies = [
 ]
 
 [project.scripts]
-server = "my_env.server.app:main"
+server = "server.app:main"

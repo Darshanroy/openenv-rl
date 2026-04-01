@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy only environment-related code
 COPY my_env ./my_env
+COPY server ./server
 COPY openenv.yaml .
 COPY pyproject.toml .
 
@@ -26,4 +27,4 @@ ENV PYTHONPATH=/app
 EXPOSE 7860
 
 # Start the OpenEnv API server on port 7860
-CMD ["uvicorn", "my_env.server.app:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
