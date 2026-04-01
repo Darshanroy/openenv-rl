@@ -111,15 +111,25 @@ class SpecialistAgent:
             thought_match = re.search(r'<thought>(.*?)</thought>', response, re.DOTALL)
             thought = thought_match.group(1).strip() if thought_match else "Analyzing current observation..."
             
-            tool_match = re.search(r'\[.*?\]', response)
+            # Use a STRICT regex to match ONLY valid tool names.
+            # This prevents matching [thought] or other non-executable brackets.
+            valid_tools = (
+                "get_order|get_order_status|cancel_order|track_shipment|get_payment_details|"
+                "update_address|check_delivery_slot|reschedule_delivery|investigate_missing|"
+                "validate_return|ask_proof|create_return_request|initiate_refund|validate_coupon|"
+                "reset_password|escalate_to_human|respond"
+            )
+            tool_regex = rf'\[({valid_tools})\(.*?\)\]'
+            
+            tool_match = re.search(tool_regex, response)
             if tool_match:
                 action = tool_match.group(0)
-                # Gentle cleanup to ensure valid action format (remove unnecessary parentheses or spaces)
+                # Gentle cleanup to ensure valid action format
                 action = re.sub(r'\((ORD-[0-9]+)\)', r"('\1')", action)
                 return thought, action
             
-            # If no tool found, default to respondent
-            return thought, f"[respond('I need more information to assist you regarding {self.agent_type}.')]"
+            # If no tool found, default to respond (clean exit)
+            return thought, f"[respond('I have analyzed your request regarding {self.agent_type}. Could you please provide more details or an order ID?')]"
 
         except Exception as e:
             return f"Error in LLM: {str(e)}", "[respond('I encountered an internal error. Please wait.')]"

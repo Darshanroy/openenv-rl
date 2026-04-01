@@ -60,13 +60,14 @@ class SupervisorAgent:
             )
             response = completion.choices[0].message.content or ""
 
-            # Extract the FIRST bracketed string to prevent over-generation
-            match = re.search(r'\[.*?\]', response)
+            # Extract tool calls using strict regex
+            valid_tools = "escalate_to_human|respond"
+            tool_regex = rf'\[({valid_tools})\(.*?\)\]'
+            match = re.search(tool_regex, response)
             if match:
-                tool_call = match.group(0)
-                return tool_call
+                return match.group(0)
 
-            return "[respond('Your issue has been resolved. Thank you for your patience.')]"
+            return "[respond('I have reviewed the case and I am handing it over to you. Please let me know how I can help further.')]"
             
         except Exception as e:
             return f"[respond('I encountered an internal error. Please try again later.')]"

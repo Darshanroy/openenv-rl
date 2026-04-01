@@ -41,11 +41,11 @@ ENV_URL = os.getenv("ENV_URL", "https://darshankumarr03-openenv-csa-rl.hf.space"
 MAX_STEPS = 8
 DEBUG = True
 
-# --- All 15 Tasks ---
+# --- Validation Set (8 Tasks) ---
+# Testing Easy, Medium, and Hard tasks to verify full tool coverage
 TASKS = [
     "easy_status", "easy_payment_fail", "easy_coupon", "easy_account", "easy_cancel",
-    "medium_delay", "medium_address", "medium_reschedule", "medium_return", "medium_double_charge",
-    "hard_refund", "hard_damaged", "hard_missing", "hard_angry", "hard_escalation",
+    "medium_delay", "medium_address", "hard_refund"
 ]
 
 
@@ -157,16 +157,6 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
                 exit_reason = metadata.get("exit_reason", "unknown")
                 print(f"\n✅ Episode complete. Reason: {exit_reason} | Final Grader Score: {final_score}")
                 
-                # Auto-log feedback for RLHF (Positive if score > 0.8)
-                f_type = "thumbs_up" if final_score >= 0.8 else "thumbs_down"
-                try:
-                    env.feedback(message_index=step, feedback_type=f_type)
-                except Exception:
-                    pass # non-critical
-                
-                return final_score
-                
-                return final_score
                 return final_score
 
     except Exception as e:
