@@ -80,6 +80,14 @@ class SupportEnvClient:
         resp.raise_for_status()
         return resp.json()
 
+    def feedback(self, message_index: int, feedback_type: str) -> dict:
+        """POST /session/feedback/{session_id} — log feedback."""
+        url = f"{self.base_url}/session/feedback/{self.session_id}"
+        data = {"message_index": message_index, "feedback_type": feedback_type}
+        resp = requests.post(url, json=data, timeout=5)
+        resp.raise_for_status()
+        return resp.json()
+
     def health(self) -> bool:
         """GET /health — check if the environment is live."""
         try:
@@ -144,12 +152,25 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
             print(f"Reward: {reward:+.2f} | Done: {done}")
 
             if done:
-                final_score = step_result.get("metadata", {}).get("grader_score", 0.0)
-                print(f"\nEpisode complete. Final Grader Score: {final_score}")
+                metadata = step_result.get("metadata", {})
+                final_score = metadata.get("grader_score", 0.0)
+                exit_reason = metadata.get("exit_reason", "unknown")
+                print(f"\n✅ Episode complete. Reason: {exit_reason} | Final Grader Score: {final_score}")
+                
+                # Auto-log feedback for RLHF (Positive if score > 0.8)
+                f_type = "thumbs_up" if final_score >= 0.8 else "thumbs_down"
+                try:
+                    env.feedback(message_index=step, feedback_type=f_type)
+                except Exception:
+                    pass # non-critical
+                
+                return final_score
+                
+                return final_score
                 return final_score
 
     except Exception as e:
-        print(f"\n❌ [FATAL ERROR] {e}")
+        print(f"\n [FATAL ERROR] {e}")
         return 0.0
 
     print(f"\nReached max steps ({MAX_STEPS}).")

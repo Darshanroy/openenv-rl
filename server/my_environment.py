@@ -280,6 +280,16 @@ class SupportEnvironment(Environment):
         if self._done:
             info["grader_score"] = self._calculate_grader_score()
             info["task_id"] = self._task_id
+            
+            # Explicit Exit Controls
+            if func_name == "respond":
+                info["exit_reason"] = "agent_responded"
+            elif func_name == "escalate_to_human":
+                info["exit_reason"] = "agent_escalated"
+            elif self._step_count >= self.max_turns:
+                info["exit_reason"] = "max_turns_reached"
+            else:
+                info["exit_reason"] = "other"
 
         return SupportObservation(
             prompt=self._prompt,

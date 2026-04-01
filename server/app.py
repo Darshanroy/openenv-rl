@@ -81,7 +81,21 @@ def session_state(session_id: str):
 @app.post("/session/feedback/{session_id}")
 def session_feedback(session_id: str, req: FeedbackRequest):
     """Log feedback for an RLHF dataset or immediate dashboard reporting."""
-    # In a real deployed app, this writes to a DB like Supabase.
+    import json
+    feedback_data = {
+        "session_id": session_id,
+        "message_index": req.message_index,
+        "feedback_type": req.feedback_type,
+        "timestamp": str(uuid.uuid4())[:8] # simplified for now
+    }
+    
+    # Save to local file for training data collection
+    try:
+        with open("feedback.jsonl", "a") as f:
+            f.write(json.dumps(feedback_data) + "\n")
+    except Exception as e:
+        print(f"Error saving feedback: {e}")
+
     print(f"✅ [FEEDBACK RECEIVED] Session: {session_id} | Msg_Idx: {req.message_index} | Type: {req.feedback_type}")
     return {"status": "success", "session_id": session_id, "feedback": req.feedback_type}
 
