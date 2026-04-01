@@ -5,8 +5,13 @@ import requests
 import textwrap
 from typing import List, Optional, Dict
 from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load local environment variables from .env
+load_dotenv()
 
 # ==============================================================================
+
 # MANDATORY CONFIGURATION
 # ==============================================================================
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1/")
