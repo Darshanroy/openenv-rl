@@ -1,10 +1,10 @@
 """
 Specialist Agent — A reusable agent class that operates with a restricted tool set and
 a focused system prompt. Each specialist only sees and uses its own tools.
+Refactored to use the OpenAI API client for high-performance inference.
 """
-import torch
 from typing import List, Dict, Optional, Tuple
-
+import re
 
 # Per-specialist configuration
 SPECIALIST_CONFIGS = {
@@ -13,6 +13,7 @@ SPECIALIST_CONFIGS = {
         "emoji": "📦",
         "allowed_tools": ["get_order", "get_order_status", "cancel_order", "validate_coupon", "reset_password"],
         "system_prompt": (
+            "You are the ORDER SPECIALIST Agent. You handle: order lookups, status checks, cancellations, and coupons.\n"
             "Available tools: get_order(id), cancel_order(id), validate_coupon(code), reset_password(email).\n"
             "Format your response exactly as follows:\n"
             "<thought>\nYour internal reasoning (background on what you found and next steps)\n</thought>\n"
@@ -60,18 +61,17 @@ SPECIALIST_CONFIGS = {
 class SpecialistAgent:
     """
     A specialist agent that generates tool calls using its restricted system prompt.
-    All specialists share the same underlying model but have different instructions.
+    All specialists share the same underlying model API but have different instructions.
     """
 
-    def __init__(self, agent_type: str, model, tokenizer, device: str = "cpu"):
+    def __init__(self, agent_type: str, client, model_id: str):
         if agent_type not in SPECIALIST_CONFIGS:
             raise ValueError(f"Unknown agent type: {agent_type}. Must be one of {list(SPECIALIST_CONFIGS.keys())}")
 
         self.agent_type = agent_type
         self.config = SPECIALIST_CONFIGS[agent_type]
-        self.model = model
-        self.tokenizer = tokenizer
-        self.device = device
+        self.client = client
+        self.model_id = model_id
 
     @property
     def name(self) -> str:
@@ -87,46 +87,42 @@ class SpecialistAgent:
 
     def generate_action(self, observation_text: str, history_text: str = "") -> Tuple[str, str]:
         """
-        Given the current observation (environment feedback), generate thoughts and the next tool call.
-        Returns (thought, action).
+        Given the current observation (environment feedback), generate thoughts and the next tool call via the OpenAI API client.
         """
         # History window (approx. 5-7 turns) for end-to-end resolution.
         history_lines = history_text.split("\n")
-        short_history = "\n".join(history_lines[-10:])
+        short_history = "\n".join(history_lines[-8:])
 
-        prompt = (
-            f"{self.config['system_prompt']}\n\n"
-            f"History:\n{short_history}\n\n"
-            f"Obs: {observation_text}\n\n"
-            f"Next Reasoning & Action:"
-        )
+        messages = [
+            {"role": "system", "content": self.config["system_prompt"]},
+            {"role": "user", "content": f"History:\n{short_history}\n\nObs: {observation_text}\n\nDecision:"}
+        ]
 
-        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True, max_length=448).to(self.device)
-
-        with torch.no_grad():
-            outputs = self.model.generate(
-                **inputs,
-                max_new_tokens=100,
-                do_sample=False,
-                pad_token_id=self.tokenizer.eos_token_id,
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model_id,
+                messages=messages,
+                temperature=0.2, # Lower temperature for tool calling precision
+                max_tokens=256
             )
+            response = completion.choices[0].message.content or ""
 
-        full_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        response = full_text[len(self.tokenizer.decode(inputs["input_ids"][0], skip_special_tokens=True)):].strip()
+            # Parse Thought and Action
+            thought_match = re.search(r'<thought>(.*?)</thought>', response, re.DOTALL)
+            thought = thought_match.group(1).strip() if thought_match else "Analyzing current observation..."
+            
+            tool_match = re.search(r'\[.*?\]', response)
+            if tool_match:
+                action = tool_match.group(0)
+                # Gentle cleanup to ensure valid action format (remove unnecessary parentheses or spaces)
+                action = re.sub(r'\((ORD-[0-9]+)\)', r"('\1')", action)
+                return thought, action
+            
+            # If no tool found, default to respondent
+            return thought, f"[respond('I need more information to assist you regarding {self.agent_type}.')]"
 
-        # Parse Thought and Action
-        import re
-        thought_match = re.search(r'<thought>(.*?)</thought>', response, re.DOTALL)
-        thought = thought_match.group(1).strip() if thought_match else "Analyzing current observation..."
-        
-        tool_match = re.search(r'\[.*?\]', response)
-        if tool_match:
-            action = tool_match.group(0)
-            # Gentle cleanup for order IDs
-            action = re.sub(r'\((ORD-[0-9]+)\)', r"('\1')", action)
-            return thought, action
-        
-        return thought, "[respond('I need more information to assist you.')]"
+        except Exception as e:
+            return f"Error in LLM: {str(e)}", "[respond('I encountered an internal error. Please wait.')]"
 
 
     def is_tool_allowed(self, tool_name: str) -> bool:

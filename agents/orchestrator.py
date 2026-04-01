@@ -1,7 +1,7 @@
 """
 Orchestrator — The main multi-agent pipeline.
 Routes customer messages → Specialist → Supervisor → Final Response.
-Produces an "Agent Trace" showing which agents handled the request.
+Refactored to be API-driven, using the OpenAI/HF Router client.
 """
 from typing import List, Dict, Tuple
 
@@ -25,7 +25,7 @@ class AgentTrace:
 
     def summary(self) -> str:
         lines = []
-        for i, s in enumerate(self.steps):
+        for s in self.steps:
             lines.append(f"{s['emoji']} **{s['agent']}**: {s['action']}")
             if s['detail']:
                 lines.append(f"   ↳ {s['detail']}")
@@ -42,19 +42,19 @@ class Orchestrator:
     
     Flow:
     1. Router classifies the customer intent.
-    2. Specialist agent generates tool call(s).
-    3. Supervisor reviews and produces the final response.
+    2. Specialist agent generates tool call(s) via the API.
+    3. Supervisor reviews and produces the final response via the API.
     """
 
-    def __init__(self, model, tokenizer, device: str = "cpu"):
+    def __init__(self, openai_client, model_id: str):
         self.router = Router()
-        self.supervisor = SupervisorAgent(model, tokenizer, device)
-        self.device = device
+        self.supervisor = SupervisorAgent(openai_client, model_id)
+        self.model_id = model_id
 
-        # Create one specialist per category (all share the same model)
+        # Create one specialist per category (all share the same API client)
         self.specialists = {}
         for agent_type in SPECIALIST_CONFIGS:
-            self.specialists[agent_type] = SpecialistAgent(agent_type, model, tokenizer, device)
+            self.specialists[agent_type] = SpecialistAgent(agent_type, openai_client, model_id)
 
     def process(self, customer_message: str, observation_text: str,
                 task_id: str = None, history_text: str = "") -> Tuple[str, AgentTrace]:
@@ -91,7 +91,7 @@ class Orchestrator:
             history_text=history_text
         )
         
-        trace.add(specialist.name, specialist.emoji, f"Action: `{action[:80]}`", detail=f"**Background:** {thought}")
+        trace.add(specialist.name, specialist.emoji, f"Action: `{action[:80]}`", detail=f"**Thought:** {thought}")
 
         # Step 4: Supervisor reviews (lightweight — only for 'respond' actions)
         if "[respond(" in action:

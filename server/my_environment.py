@@ -9,8 +9,8 @@ import uuid
 from typing import Dict, Any, Tuple, Optional, List
 
 from openenv.core import Environment
-from ..models import SupportAction, SupportObservation, SupportState
-from .tools import ACTION_REGISTRY
+from my_env.models import SupportAction, SupportObservation, SupportState
+from server.tools import ACTION_REGISTRY
 
 
 # ── Task Configuration ──────────────────────────────────────────────────────────
