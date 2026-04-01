@@ -14,7 +14,7 @@ API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 
 # LOCAL CONFIGURATION
-ENV_URL = "http://localhost:8000"
+ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
 MAX_STEPS = 6
 TEMPERATURE = 0.1
 MAX_TOKENS = 512
