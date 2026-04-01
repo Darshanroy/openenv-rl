@@ -13,3 +13,4 @@ pandas
 openai
 openenv-core
 python-dotenv
+docker
