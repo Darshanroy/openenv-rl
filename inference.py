@@ -5,6 +5,13 @@ this script depends on the agents folder for the agentic soo run this script wit
 """
 
 import os
+import sys
+
+# Force UTF-8 stdout so emojis/unicode don't crash on Windows charmap
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
 import textwrap
 import time
 from typing import List, Optional, Dict, Any
@@ -120,7 +127,12 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
     print(f"[EVAL] Task: {task_id}")
     print(f"{'='*50}")
 
+    # === STRUCTURED OUTPUT: [START] ===
+    print(f"[START] task={task_id}", flush=True)
+
     history_lines: List[str] = []
+    total_steps = 0
+    total_reward = 0.0
 
     try:
         # 1. Reset environment for this specific task
@@ -135,7 +147,7 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
         # Execute up to MAX_STEPS until the task is complete
         for step in range(1, MAX_STEPS + 1):
             if done:
-                print("\n✅ Task concluded by environment.")
+                print("\n[OK] Task concluded by environment.")
                 break
 
             # 2. Multi-Agent Reasoning via Orchestrator (Router -> Specialist -> Supervisor)
@@ -143,7 +155,7 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
             history_text = "\n".join(history_lines)
             
             # Simulate 'thinking' time for a realistic user experience
-            print(f"\n[STEP {step}] 🧠 Agent is thinking...")
+            print(f"\n  >> Step {step}: Agent is thinking...")
             time.sleep(1.5)
             
             # Generate the next action
@@ -155,8 +167,11 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
             )
 
             # Log the visual agent trace and final action to the terminal
-            print(trace.summary())
-            print(f"🚀 **Action Taken**: `{action_str}`")
+            try:
+                print(trace.summary())
+            except UnicodeEncodeError:
+                print(trace.summary().encode('ascii', errors='replace').decode('ascii'))
+            print(f">> Action Taken: {action_str}")
 
             # 3. Execute the action against the deployed environment
             step_result = env.step(action_str)
@@ -169,21 +184,33 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
             history_lines.append(f"Agent: {action_str}")
             history_lines.append(f"System: {last_feedback}")
 
+            total_steps = step
+            total_reward += reward
+
+            # === STRUCTURED OUTPUT: [STEP] ===
+            print(f"[STEP] step={step} reward={reward}", flush=True)
+
             print(f"Reward: {reward:+.2f} | Done: {done}")
 
             if done:
                 metadata = step_result.get("metadata", {})
                 final_score = metadata.get("grader_score", 0.0)
                 exit_reason = metadata.get("exit_reason", "unknown")
-                print(f"\n✅ Episode complete. Reason: {exit_reason} | Final Grader Score: {final_score}")
-                
+                print(f"\n[OK] Episode complete. Reason: {exit_reason} | Final Grader Score: {final_score}")
+
+                # === STRUCTURED OUTPUT: [END] ===
+                print(f"[END] task={task_id} score={final_score} steps={total_steps}", flush=True)
                 return final_score
 
     except Exception as e:
         print(f"\n [FATAL ERROR] {e}")
+        # === STRUCTURED OUTPUT: [END] on error ===
+        print(f"[END] task={task_id} score=0.0 steps={total_steps}", flush=True)
         return 0.0
 
     print(f"\nReached max steps ({MAX_STEPS}).")
+    # === STRUCTURED OUTPUT: [END] on max steps ===
+    print(f"[END] task={task_id} score=0.0 steps={total_steps}", flush=True)
     return 0.0
 
 
