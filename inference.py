@@ -114,51 +114,37 @@ class SupportEnvClient:
 def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
     """
     Orchestrates the evaluation of a single customer support task.
-    
-    Args:
-        orch: The Multi-Agent Orchestrator (Brain).
-        env: The SupportEnvClient (World API).
-        task_id: The specific scenario to evaluate.
-        
+    Emits strict [START]/[STEP]/[END] structured output to stdout.
+
     Returns:
-        The final grader score (0.0 to 10.0).
+        The final score in [0, 1].
     """
-    print(f"\n{'='*50}")
-    print(f"[EVAL] Task: {task_id}")
-    print(f"{'='*50}")
-
-    # === STRUCTURED OUTPUT: [START] ===
-    print(f"[START] task={task_id}", flush=True)
-
-    history_lines: List[str] = []
+    # Tracking state for structured output
+    all_rewards: List[float] = []
     total_steps = 0
-    total_reward = 0.0
+    final_score = 0.0
+    success = False
+    action_str = ""
+
+    # === [START] ===
+    print(f"[START] task={task_id} env=CustomerSupport-v1 model={MODEL_NAME}", flush=True)
 
     try:
         # 1. Reset environment for this specific task
         obs = env.reset(task_id=task_id)
-        customer_msg = obs.get("prompt", "")  # The primary goal prompt for the agent
-        
+        customer_msg = obs.get("prompt", "")
         current_obs = f"Task Start: {customer_msg}"
         done = obs.get("done", False)
+        history_lines: List[str] = []
 
-        print(f"Goal: {customer_msg}")
-
-        # Execute up to MAX_STEPS until the task is complete
+        # 2. Execute up to MAX_STEPS
         for step in range(1, MAX_STEPS + 1):
             if done:
-                print("\n[OK] Task concluded by environment.")
                 break
 
-            # 2. Multi-Agent Reasoning via Orchestrator (Router -> Specialist -> Supervisor)
-            print(f"\n--- Step {step} ---")
             history_text = "\n".join(history_lines)
-            
-            # Simulate 'thinking' time for a realistic user experience
-            print(f"\n  >> Step {step}: Agent is thinking...")
-            time.sleep(1.5)
-            
-            # Generate the next action
+
+            # Agent reasoning
             action_str, trace = orch.process(
                 customer_message=customer_msg,
                 observation_text=current_obs,
@@ -166,52 +152,53 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
                 history_text=history_text
             )
 
-            # Log the visual agent trace and final action to the terminal
-            try:
-                print(trace.summary())
-            except UnicodeEncodeError:
-                print(trace.summary().encode('ascii', errors='replace').decode('ascii'))
-            print(f">> Action Taken: {action_str}")
-
-            # 3. Execute the action against the deployed environment
+            # Execute action against the environment
             step_result = env.step(action_str)
-            reward = step_result.get("reward", 0.0) or 0.0
+            reward = float(step_result.get("reward", 0.0) or 0.0)
             done = step_result.get("done", False)
             step_messages = step_result.get("messages", [])
             last_feedback = step_messages[-1]["content"] if step_messages else "No observation."
-            
+            error_msg = step_result.get("last_action_error") or step_result.get("error")
+
+            # Update tracking
             current_obs = f"Observation: {last_feedback}"
             history_lines.append(f"Agent: {action_str}")
             history_lines.append(f"System: {last_feedback}")
-
             total_steps = step
-            total_reward += reward
+            all_rewards.append(reward)
 
-            # === STRUCTURED OUTPUT: [STEP] ===
-            print(f"[STEP] step={step} reward={reward}", flush=True)
+            # Sanitize action string: no newlines allowed in structured line
+            safe_action = action_str.replace("\n", " ").replace("\r", "")
+            done_str = "true" if done else "false"
+            error_str = str(error_msg).replace("\n", " ").replace("\r", "") if error_msg else "null"
 
-            print(f"Reward: {reward:+.2f} | Done: {done}")
+            # === [STEP] ===
+            print(f"[STEP] step={step} action={safe_action} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
 
             if done:
                 metadata = step_result.get("metadata", {})
-                final_score = metadata.get("grader_score", 0.0)
-                exit_reason = metadata.get("exit_reason", "unknown")
-                print(f"\n[OK] Episode complete. Reason: {exit_reason} | Final Grader Score: {final_score}")
-
-                # === STRUCTURED OUTPUT: [END] ===
-                print(f"[END] task={task_id} score={final_score} steps={total_steps}", flush=True)
-                return final_score
+                raw_score = float(metadata.get("grader_score", 0.0) or 0.0)
+                # Clamp score to [0, 1]
+                final_score = max(0.0, min(1.0, raw_score))
+                success = final_score > 0.0
+                break
 
     except Exception as e:
-        print(f"\n [FATAL ERROR] {e}")
-        # === STRUCTURED OUTPUT: [END] on error ===
-        print(f"[END] task={task_id} score=0.0 steps={total_steps}", flush=True)
-        return 0.0
+        # On exception: score=0, success=false
+        error_str = str(e).replace("\n", " ").replace("\r", "")
+        print(f"[STEP] step={total_steps + 1} action={action_str} reward=0.00 done=true error={error_str}", flush=True)
+        all_rewards.append(0.0)
+        total_steps += 1
+        final_score = 0.0
+        success = False
 
-    print(f"\nReached max steps ({MAX_STEPS}).")
-    # === STRUCTURED OUTPUT: [END] on max steps ===
-    print(f"[END] task={task_id} score=0.0 steps={total_steps}", flush=True)
-    return 0.0
+    # === [END] — always emitted ===
+    success_str = "true" if success else "false"
+    rewards_str = ",".join(f"{r:.2f}" for r in all_rewards) if all_rewards else "0.00"
+    print(f"[END] success={success_str} steps={total_steps} score={final_score:.2f} rewards={rewards_str}", flush=True)
+    print()  # Leave a space after each end
+
+    return final_score
 
 
 # ==============================================================================
