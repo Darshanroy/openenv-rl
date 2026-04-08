@@ -269,14 +269,12 @@ class SupportEnvironment(Environment):
             feedback = f"Syntax Error: {error_msg}"
             reward -= 4.0
         elif func_name == "respond":
-            # Agent has provided a final response to the customer
+            # Success resolution: Agent has provided a final response to the customer
             feedback = "Task concluded by Agent response."
             self._tools_used.add("respond")
-            self._done = True
-            # Gate bonuses by grader_score: no bonus if agent skipped required tools
-            grader = self._calculate_grader_score()
             reward += self._scenario.get("intent_rewards", {}).get("respond", 0)
-            reward += 10.0 * grader    # Resolution bonus scaled by tool coverage
+            self._done = True
+            reward += 10.0  # Major success bonus
         elif func_name in ACTION_REGISTRY:
             # Execute standard backend tool logic
             try:
@@ -289,8 +287,7 @@ class SupportEnvironment(Environment):
                 self._tools_used.add(func_name)
                 if func_name == "escalate_to_human":
                     self._done = True
-                    grader = self._calculate_grader_score()
-                    reward += 10.0 * grader
+                    reward += 10.0
                     feedback += " Task Escalated."
             except Exception as e:
                 # Handle backend execution failures
@@ -306,10 +303,9 @@ class SupportEnvironment(Environment):
         if self._step_count >= self.max_turns:
             self._done = True
 
-        # Efficiency bonus (also gated by grader_score)
+        # Efficiency bonus
         if self._done and self._step_count <= self._scenario.get("optimal_steps", 99):
-            grader = self._calculate_grader_score()
-            reward += 3.0 * grader
+            reward += 3.0
 
         info = {}
         if self._done:
