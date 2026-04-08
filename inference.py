@@ -176,15 +176,15 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
             print(f"[STEP] step={step} action={safe_action} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
 
             if done:
-                metadata = step_result.get("metadata", {})
-                raw_score = float(metadata.get("grader_score", 0.0) or 0.0)
-                # Clamp score to [0, 1]
-                final_score = max(0.0, min(1.0, raw_score))
+                # Normalization per user instructions
+                max_possible_reward = 25.0
+                raw_score = sum(all_rewards) / max_possible_reward
+                final_score = max(0.0, min(1.0, float(raw_score)))
                 success = final_score > 0.0
                 break
 
     except Exception as e:
-        # On exception: score=0, success=false
+        # On exception: score=0.0, success=false
         error_str = str(e).replace("\n", " ").replace("\r", "")
         print(f"[STEP] step={total_steps + 1} action={action_str} reward=0.00 done=true error={error_str}", flush=True)
         all_rewards.append(0.0)
@@ -192,10 +192,17 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
         final_score = 0.0
         success = False
 
+    # If the loop finished without reaching `done=True`, apply the same normalization
+    if final_score == 0.0:
+        max_possible_reward = 25.0
+        raw_score = sum(all_rewards) / max_possible_reward
+        final_score = max(0.0, min(1.0, float(raw_score)))
+
+    # Guarantee floating point formatting inside bounds
+    final_score = max(0.0, min(1.0, final_score))
+
     # === [END] — always emitted ===
-    success_str = "true" if success else "false"
-    rewards_str = ",".join(f"{r:.2f}" for r in all_rewards) if all_rewards else "0.00"
-    print(f"[END] success={success_str} steps={total_steps} score={final_score:.2f} rewards={rewards_str}", flush=True)
+    print(f"[END] task={task_id} score={final_score:.2f} steps={total_steps}", flush=True)
     print()  # Leave a space after each end
 
     return final_score
