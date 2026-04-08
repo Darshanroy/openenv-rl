@@ -269,23 +269,28 @@ class SupportEnvironment(Environment):
             feedback = f"Syntax Error: {error_msg}"
             reward -= 4.0
         elif func_name == "respond":
-            # Success resolution: Agent has provided a final response to the customer
+            # Agent has provided a final response to the customer
             feedback = "Task concluded by Agent response."
             self._tools_used.add("respond")
-            reward += self._scenario.get("intent_rewards", {}).get("respond", 0)
             self._done = True
-            reward += 10.0  # Major success bonus
+            # Gate bonuses by grader_score: no bonus if agent skipped required tools
+            grader = self._calculate_grader_score()
+            reward += self._scenario.get("intent_rewards", {}).get("respond", 0)
+            reward += 10.0 * grader    # Resolution bonus scaled by tool coverage
         elif func_name in ACTION_REGISTRY:
             # Execute standard backend tool logic
             try:
                 res = ACTION_REGISTRY[func_name](*args, **kwargs_parsed)
                 feedback = f"API Output: {str(res)}"
+                if func_name not in self._tools_used:
+                    # Apply tool-specific reward weights only the first time it is used
+                    reward += self._scenario.get("intent_rewards", {}).get(func_name, 0)
+                
                 self._tools_used.add(func_name)
-                # Apply tool-specific reward weights from the task configuration
-                reward += self._scenario.get("intent_rewards", {}).get(func_name, 0)
                 if func_name == "escalate_to_human":
                     self._done = True
-                    reward += 10.0
+                    grader = self._calculate_grader_score()
+                    reward += 10.0 * grader
                     feedback += " Task Escalated."
             except Exception as e:
                 # Handle backend execution failures
@@ -301,9 +306,10 @@ class SupportEnvironment(Environment):
         if self._step_count >= self.max_turns:
             self._done = True
 
-        # Efficiency bonus
+        # Efficiency bonus (also gated by grader_score)
         if self._done and self._step_count <= self._scenario.get("optimal_steps", 99):
-            reward += 3.0
+            grader = self._calculate_grader_score()
+            reward += 3.0 * grader
 
         info = {}
         if self._done:

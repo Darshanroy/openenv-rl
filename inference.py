@@ -176,10 +176,10 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
             print(f"[STEP] step={step} action={safe_action} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
 
             if done:
-                # Normalization per user instructions
-                max_possible_reward = 25.0
-                raw_score = sum(all_rewards) / max_possible_reward
-                final_score = max(0.0, min(1.0, float(raw_score)))
+                # Use the environment's grader_score (already [0,1] weighted tool coverage)
+                metadata = step_result.get("metadata", {})
+                grader = float(metadata.get("grader_score", 0.0) or 0.0)
+                final_score = max(0.0, min(1.0, grader))
                 success = final_score > 0.0
                 break
 
@@ -192,13 +192,7 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
         final_score = 0.0
         success = False
 
-    # If the loop finished without reaching `done=True`, apply the same normalization
-    if final_score == 0.0:
-        max_possible_reward = 25.0
-        raw_score = sum(all_rewards) / max_possible_reward
-        final_score = max(0.0, min(1.0, float(raw_score)))
-
-    # Guarantee floating point formatting inside bounds
+    # Guarantee final_score is in [0.0, 1.0]
     final_score = max(0.0, min(1.0, final_score))
 
     # === [END] — always emitted ===

@@ -192,20 +192,29 @@ def total_reward(environments, **kwargs):
 
     r = []
     for i in range(len(environments)):
-        total = (
-            r1[i] * 2.0 +   # Success is paramount
-            r2[i] * 1.0 +
-            r3[i] * 0.5 +
-            r4[i] * 0.5 +
-            r5[i] * 0.7 +
-            r6[i] * 0.8 +
-            r7[i] * 1.5 +
-            r8[i] * 1.0 +
-            r9[i] * 1.2     # Action alignment weight
+        grader = float(enriched["grader_score"][i])  # [0.0, 1.0] from env
+
+        # --- Core signal: grader-based task success (dominates) ---
+        # If grader is 0.0 (no correct tools used), this drives total strongly negative.
+        # If grader is 1.0 (perfect tool coverage), this gives +3.0.
+        task_signal = (grader * 5.0) - 2.0   # range: [-2.0, +3.0]
+
+        # --- Auxiliary signals (small shaping, never override task_signal) ---
+        aux = (
+            r3[i] * 0.1 +   # format compliance
+            r4[i] * 0.1 +   # conciseness
+            r5[i] * 0.3 +   # repetition penalty (important for loops)
+            r6[i] * 0.2 +   # step efficiency
+            r7[i] * 0.5 +   # invalid action penalty (strong)
+            r8[i] * 0.3 +   # completion/politeness
+            r9[i] * 0.5     # action alignment (strong)
         )
 
-        # PPO-safe clipping to prevent reward scale drift
+        total = task_signal + aux
+
+        # PPO-safe clipping
         total = max(-5.0, min(5.0, total))
         r.append(total)
 
     return r
+
