@@ -115,8 +115,8 @@ TASK_CONFIGS = {
     },
     "medium_double_charge": {
         "difficulty": "medium",
-        "customer": "Rajesh Kumar",
-        "initial_message": "I was charged twice for my gas hob order ORD-1515!",
+        "customer": "Neha Gupta",
+        "initial_message": "I was charged twice for my cosmetics order ORD-1515!",
         "target_tools": ["get_order", "initiate_refund"],
         "intent_rewards": {"initiate_refund": 12},
         "optimal_steps": 2,
