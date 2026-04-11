@@ -9,6 +9,7 @@ import re
 import ast
 import random
 import uuid
+import math
 from typing import Dict, Any, Tuple, Optional, List
 
 # Base environment class from openenv.core
@@ -236,7 +237,7 @@ class SupportEnvironment(Environment):
             prompt=self._prompt,
             messages=list(self._messages),
             done=False,
-            reward=0.0,
+            reward=self._normalize_reward(0.0),
         )
 
     def step(self, action: SupportAction, timeout_s: Optional[float] = None, **kwargs) -> SupportObservation:
@@ -250,7 +251,7 @@ class SupportEnvironment(Environment):
                 prompt=self._prompt,
                 messages=list(self._messages),
                 done=True,
-                reward=0.0,
+                reward=self._normalize_reward(0.0),
                 metadata={"grader_score": self._calculate_grader_score()},
             )
 
@@ -326,7 +327,7 @@ class SupportEnvironment(Environment):
             prompt=self._prompt,
             messages=list(self._messages),
             done=self._done,
-            reward=float(reward),
+            reward=self._normalize_reward(float(reward)),
             metadata=info,
         )
 
@@ -407,3 +408,16 @@ class SupportEnvironment(Environment):
         # Normalize score to be strictly between 0 and 1 (0.01 to 0.99)
         final_score = (min(float(score), 1.0) * 0.98) + 0.01
         return float(f"{final_score:.4f}")
+
+    def _normalize_reward(self, reward: float) -> float:
+        """
+        Squash any real-valued reward into the (0.0, 1.0) range using a scaled sigmoid.
+        Ensures strict compliance with the 'no 0.0 or 1.0' protocol.
+        """
+        # Sigmoid squashing: range (0, 1)
+        # Using divisor 5.0 to keep the signal sensitive between -10 and +20
+        sigmoid = 1.0 / (1.0 + math.exp(-reward / 5.0))
+        
+        # Scale (0, 1) to (0.01, 0.99)
+        final_reward = (sigmoid * 0.98) + 0.01
+        return float(f"{final_reward:.4f}")
