@@ -40,7 +40,7 @@ def verify_graders():
     client = SupportEnvClient(base_url=ENV_SERVER_URL)
     
     print("\n" + "="*80)
-    print("VERIFYING GRADERS FOR 0.0 - 1.0 SPEC COMPLIANCE")
+    print("VERIFYING GRADERS FOR STRICT (0.0, 1.0) SPEC COMPLIANCE")
     print("="*80)
     
     all_passed = True
@@ -80,10 +80,10 @@ def verify_graders():
                     score_part = res_part.metadata.get("grader_score", -999.0)
                     break
                 
-        # Assertions
-        is_valid_fail = 0.0 <= score_fail <= 1.0
-        is_valid_perf = 0.0 <= score_perf <= 1.0
-        is_valid_part = 0.0 <= score_part <= 1.0
+        # Assertions: Strictly BETWEEN 0 and 1
+        is_valid_fail = 0.0 < score_fail < 1.0
+        is_valid_perf = 0.0 < score_perf < 1.0
+        is_valid_part = 0.0 < score_part < 1.0
         
         print(f"  [Failure Test] Score: {score_fail:.2f} | Bounded [0,1]: {'PASS' if is_valid_fail else 'FAIL'}")
         print(f"  [Partial Test] Score: {score_part:.2f} | Bounded [0,1]: {'PASS' if is_valid_part else 'FAIL'} (Checks partial decimal values)")
@@ -94,9 +94,9 @@ def verify_graders():
             
     print("\n" + "="*80)
     if all_passed:
-        print("PASS: ALL GRADERS VERIFIED. All scores are strictly bounded between 0.0 and 1.0.")
+        print("PASS: ALL GRADERS VERIFIED. All scores are strictly between 0.0 and 1.0 (excluding boundaries).")
     else:
-        print("FAIL: GRADER VIOLATION DETECTED. Some scores fell outside the [0.0, 1.0] range.")
+        print("FAIL: GRADER VIOLATION DETECTED. Some scores fell outside the (0.0, 1.0) range.")
     print("="*80 + "\n")
 
 if __name__ == "__main__":

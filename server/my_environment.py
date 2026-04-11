@@ -404,4 +404,6 @@ class SupportEnvironment(Environment):
             if tool in used and tool not in blocked_tools:
                 score += weight
         
-        return min(float(score), 1.0)
+        # Normalize score to be strictly between 0 and 1 (0.01 to 0.99)
+        final_score = (min(float(score), 1.0) * 0.98) + 0.01
+        return float(f"{final_score:.4f}")
