@@ -176,11 +176,10 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
             print(f"[STEP] step={step} action={safe_action} reward={reward:.2f} done={done_str} error={error_str}", flush=True)
 
             if done:
-                # Normalization: sum of step rewards / max possible reward
-                max_possible_reward = 25.0
-                raw_score = sum(all_rewards) / max_possible_reward
-                final_score = max(0.0, min(1.0, float(raw_score)))
-                success = final_score > 0.0
+                # Use the environment's grader_score from metadata (already normalized to (0, 1))
+                metadata = step_result.get("metadata", {})
+                final_score = float(metadata.get("grader_score", 0.01))
+                success = final_score > 0.01
                 break
 
     except Exception as e:
@@ -192,14 +191,12 @@ def run_task(orch: Orchestrator, env: SupportEnvClient, task_id: str) -> float:
         final_score = 0.0
         success = False
 
-    # If loop ended without done, normalize whatever we have
-    if final_score == 0.0 and all_rewards:
-        max_possible_reward = 25.0
-        raw_score = sum(all_rewards) / max_possible_reward
-        final_score = max(0.0, min(1.0, float(raw_score)))
+    # If loop ended without done, no grader_score was obtained — use minimum
+    if final_score == 0.0:
+        final_score = 0.01
 
-    # Guarantee final_score is in [0.0, 1.0]
-    final_score = max(0.0, min(1.0, final_score))
+    # Guarantee final_score is strictly in (0.0, 1.0)
+    final_score = max(0.01, min(0.99, final_score))
 
     # === [END] — always emitted ===
     print(f"[END] task={task_id} score={final_score:.2f} steps={total_steps}", flush=True)
