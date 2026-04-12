@@ -57,7 +57,7 @@ class Orchestrator:
         """
         Initializes the agent brain with a router, supervisor, and specialized agents.
         """
-        self.router = Router()
+        self.router = Router(openai_client=openai_client, model_id=model_id)
         self.supervisor = SupervisorAgent(openai_client, model_id)
         self.model_id = model_id
 
